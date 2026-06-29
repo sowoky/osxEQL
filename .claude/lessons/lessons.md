@@ -48,6 +48,42 @@ Read this at session start. Receipts (full write-ups) live in `docs/JOURNEY.md`.
   identity, not "osxEQL" branding — a properly branded single non-bouncing tile needs a real
   Cocoa launcher (the packaging task), not a bash `exec`.
 
+## Packaging / distribution (shareable build)
+
+- **The Wine runtime is fully portable — do NOT waste time "bundling dylibs."** `otool`
+  across the whole `Wine/` tree shows zero Homebrew/external deps; only macOS system
+  frameworks + `/usr/lib`. The `/usr/local/lib` in `LC_RPATH` is a dead fallback `dyld`
+  ignores. The runtime copies to any Apple Silicon Mac as-is. (An earlier STATUS note
+  claimed it wasn't portable — that was wrong; verified 2026-06-29.)
+
+- **Cold install flow (verified):** `EQLegends_setup.exe` is a 32-bit NSIS installer; it
+  runs under our WoW64 wine. `wine EQLegends_setup.exe /S` installs LaunchPad to
+  `C:\LaunchPad.exe` (the `/S` default) — exit 0, headless. The *game* (~7 GB) is NOT in
+  the installer; LaunchPad downloads it to
+  `C:\users\Public\Daybreak Game Company\Installed Games\EverQuest Legends\` after the
+  user logs in. So first-run = run setup.exe → run bootstrap `C:\LaunchPad.exe` (login +
+  download) → thereafter the game-dir LaunchPad. The app/launcher.sh state machine encodes
+  this (GAME_LP → BOOT_LP → installer wizard).
+
+- **The shipped app is self-contained + relocatable.** `packaging/build-app.sh` embeds the
+  runtime at `osxEQL.app/Contents/Resources/Wine` (launcher resolves WINE relative to the
+  bundle); the prefix + client stay in `~/Library/Application Support/osxEQL`. DXMT's
+  per-prefix `winemetal.dll` (gotcha #3, 3rd placement) is copied from the embedded wine
+  tree into the prefix at first run. `build-dmg.sh` → a ~187 MB UDZO DMG.
+
+- **Prefix selection:** launcher uses `~/…/osxEQL/prefix`; back-compat falls to `prefix-cx`
+  if `prefix` has no `system.reg` (so an existing dev install keeps working). A fresh user
+  gets `prefix` created by the wizard. (Kyle's machine has BOTH; the app picks `prefix`.)
+
+- **EverQuest Legends is an official Daybreak/Game Jawn title** (Closed Beta 2026-07-01,
+  Classic launch 2026-07-28) — not a private/emulated server. So "get the installer from
+  Daybreak, you need an account" is the correct framing in the wizard/notices.
+
+- **Unsigned distribution:** app is ad-hoc signed (no Apple Developer ID). Downloaded DMG
+  is quarantined → first open needs right-click→Open or Privacy&Security "Open Anyway".
+  `build-app.sh` does `codesign --force --deep --sign -`; editing the bundle later requires
+  re-signing.
+
 ## Verification
 
 - **Headless render proof:** `eqgame.exe patchme` then grep `<EQ>/Logs/dbg.txt` for

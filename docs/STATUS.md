@@ -1,6 +1,6 @@
 # osxEQL — current status
 
-_Last updated: 2026-06-28._
+_Last updated: 2026-06-29._
 
 ## ✅ It works, on a clean self-built Wine
 EQL **launches and renders on Apple Silicon via DXMT** (open-source D3D11→Metal),
@@ -11,7 +11,11 @@ Proof (`eqgame.exe patchme`, read `<EQ>/Logs/dbg.txt`):
 `CRender::InitDevice completed successfully` + `EQ Window Width: 1280 ... windowed`,
 DXMT on a live `D3D_FEATURE_LEVEL_11_0` loop, no `Failed to create metal view`.
 
-Deliverable: **`~/Desktop/osxEQL.app`** — double-click → LaunchPad → log in → Play.
+Deliverables:
+- **`~/Desktop/osxEQL.app`** (Kyle's dev install) — double-click → LaunchPad → log in → Play.
+- **Shareable build:** `github.com/sowoky/osxEQL`, Release `v0.2.0` ships
+  `osxEQL-0.2.0.dmg` (187 MB) — a self-contained app that embeds the runtime and
+  walks a cold user through Daybreak's installer. See "Shareable" below.
 
 ## The Wine runtime — now legit and redistributable
 | Layer | What | Clean? |
@@ -62,17 +66,33 @@ Then `osxeql backend dxmt` (or 03-install-backend.sh) drops DXMT's builtin DLLs 
 - The macdrv ABI DXMT v0.80 expects matches **CrossOver's** Wine, NOT vanilla 11.x
   (vanilla refactored `macdrv_win_data`). Another reason to build CrossOver's source.
 
-## Remaining work
-1. **From-scratch install flow** (`osxeql install` → run the Daybreak installer into a
-   clean prefix, instead of the one-time copy of the 6.7 GB client out of `prefix/`).
-2. **Self-contained packaging for sharing.** The built Wine rpaths into the Intel
-   Homebrew dylibs at `/usr/local/lib` (freetype, gnutls, sdl2, MoltenVK, …) — it runs on
-   *this* Mac but isn't portable yet. To ship: copy those dylibs into `Wine/lib/` and
-   `install_name_tool` their paths to `@loader_path` (the build already sets
-   `-headerpad_max_install_names` to leave room). Then bundle app + Wine into one
-   downloadable.
-3. Replace the old Gcenx-download step in `01-stage-runtime.sh` (the runtime now comes
-   from `build-wine.sh`, not a Gcenx tarball).
+## Shareable — DONE (2026-06-29)
+The "ship it to other Macs" work is complete and on GitHub.
+
+- **The runtime is fully portable.** `otool` across the whole 569 MB `Wine/` tree
+  shows ZERO Homebrew/external dylib deps — only macOS system frameworks + `/usr/lib`.
+  The `/usr/local/lib` entry the earlier plan worried about is a dead `LC_RPATH`
+  fallback `dyld` silently ignores; **no dylib bundling / `install_name_tool` pass is
+  needed.** It copies to any Apple Silicon Mac and runs. (This corrects the old
+  "not portable yet" note here — it was wrong.)
+- **Self-contained app.** `packaging/build-app.sh` embeds the runtime in
+  `osxEQL.app/Contents/Resources/Wine`; the prefix + client live in
+  `~/Library/Application Support/osxEQL`. `packaging/build-dmg.sh` → a 187 MB DMG.
+  Source lives in `app/` (launcher + Info.plist).
+- **Cold install flow verified.** `EQLegends_setup.exe /S` installs LaunchPad into a
+  fresh prefix under our wine (exit 0), and that LaunchPad launches. The app's
+  first-run wizard runs the user's installer, then opens the launcher. The only step
+  we can't automate is the user's own Daybreak **login + ~7 GB client download**.
+- **Engine fixed:** `01-stage-runtime.sh` no longer downloads prebuilt Gcenx Wine
+  (it lacks `macdrv_functions`); the runtime comes from `build-wine.sh` or the bundle.
+
+## Remaining (optional polish)
+- **Notarization.** The DMG/app is ad-hoc signed (unsigned) → first-open needs
+  right-click→Open. A $99/yr Apple Developer ID + notarize step would remove the
+  Gatekeeper prompt. Deferred by choice.
+- **Full cold end-to-end on a clean machine.** Verified component-by-component on this
+  Mac; a from-zero run on a fresh macOS account (login + real download) is the last
+  belt-and-suspenders check.
 
 ## Rollback
 Previous extracted-CrossOver Wine kept at `osxEQL/Wine.extracted-bak/` — restore by
