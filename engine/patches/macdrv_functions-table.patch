@@ -1,0 +1,116 @@
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+index 7c2b95f..23fc8ac 100644
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -863,7 +863,26 @@ static NTSTATUS load_builtin_unixlib( void *module, BOOL wow, const void **funcs
+     {
+         if (builtin->unix_path && !builtin->unix_handle)
+         {
+-            builtin->unix_handle = dlopen( builtin->unix_path, RTLD_NOW );
++            /* osxEQL/DXMT: load winemac.so's unixlib with RTLD_GLOBAL. DXMT's
++             * winemetal.so link-depends on winemac.so and resolves the
++             * "macdrv_functions" bridge table via dlsym(RTLD_DEFAULT). Wine
++             * pre-loads winemac.so here (it's the display driver) BEFORE
++             * winemetal.so; dyld then reuses this image to satisfy winemetal's
++             * dependency, but a privately (RTLD_LOCAL) pre-loaded image is not
++             * visible to dlsym(RTLD_DEFAULT) even from the dependent. RTLD_GLOBAL
++             * makes it visible. Only winemac.so needs this; other unixlibs stay
++             * RTLD_LOCAL (they share __wine_unix_call_funcs and would collide). */
++            /* osxEQL/DXMT (necessary, but NOT sufficient on its own — see
++             * docs/STATUS.md "vanilla Wine"): load winemac.so RTLD_GLOBAL so
++             * its macdrv_functions bridge is reachable. The remaining blocker is
++             * that DXMT's winemetal.so dlsym(RTLD_DEFAULT) searches only its own
++             * two-level dependency graph, and Wine's standalone preload of
++             * winemac.so (this dlopen) is merely *reused* for winemetal's
++             * @rpath/winemac.so dependency rather than freshly linked into its
++             * namespace, so winemetal never sees the table. */
++            int dlflags = RTLD_NOW;
++            if (strstr( builtin->unix_path, "winemac.so" )) dlflags |= RTLD_GLOBAL;
++            builtin->unix_handle = dlopen( builtin->unix_path, dlflags );
+             if (!builtin->unix_handle)
+                 WARN_(module)( "failed to load %s: %s\n", debugstr_a(builtin->unix_path), dlerror() );
+         }
+diff --git a/dlls/winemac.drv/macdrv_main.c b/dlls/winemac.drv/macdrv_main.c
+index ed91383..b3eb87b 100644
+--- a/dlls/winemac.drv/macdrv_main.c
++++ b/dlls/winemac.drv/macdrv_main.c
+@@ -37,6 +37,79 @@
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(macdrv);
+ 
++/* ---------------------------------------------------------------------------
++ * osxEQL: macdrv_functions bridge table for DXMT (github.com/3Shain/dxmt).
++ *
++ * DXMT's winemetal.so links winemac.so as a dependency and looks up the data
++ * symbol "macdrv_functions" via dlsym(RTLD_DEFAULT). Upstream Wine does not
++ * export it (only CodeWeavers' build does), so we export an open-source
++ * equivalent here. Field order is DXMT's ABI (struct macdrv_functions_t in
++ * src/winemetal/unix/winemetal_unix.c) — do not reorder.
++ *
++ * ABI shim: DXMT was built against the pre-refactor macdrv_win_data, where the
++ * client view is the 4th field ("client_cocoa_view", offset 24). Upstream Wine
++ * refactored macdrv_win_data (client view is now the 3rd field "client_view";
++ * offset 24 holds window_rects). So get_win_data/release_win_data are wrapped
++ * to hand DXMT a record in the layout it expects, pointing at the real view.
++ * ------------------------------------------------------------------------- */
++#include <stdlib.h>
++#include <dispatch/dispatch.h>
++
++extern macdrv_metal_device macdrv_create_metal_device(void);
++extern void macdrv_release_metal_device(macdrv_metal_device d);
++extern macdrv_metal_view macdrv_view_create_metal_view(macdrv_view v, macdrv_metal_device d);
++extern macdrv_metal_layer macdrv_view_get_metal_layer(macdrv_metal_view v);
++extern void macdrv_view_release_metal_view(macdrv_metal_view v);
++extern void OnMainThread(dispatch_block_t block);
++
++/* DXMT's expected macdrv_win_data layout (only the first 4 fields are read). */
++struct dxmt_win_data
++{
++    HWND                    hwnd;               /* 0  */
++    macdrv_window           cocoa_window;       /* 8  */
++    macdrv_view             cocoa_view;         /* 16 */
++    macdrv_view             client_cocoa_view;  /* 24 <- DXMT reads this */
++    struct macdrv_win_data *real;               /* bookkeeping; DXMT never reads past 24 */
++};
++
++static struct macdrv_win_data *dxmt_get_win_data(HWND hwnd)
++{
++    struct macdrv_win_data *d = get_win_data(hwnd);
++    struct dxmt_win_data *s;
++
++    if (!d) return NULL;
++    if (!(s = malloc(sizeof(*s)))) { release_win_data(d); return NULL; }
++    s->hwnd = d->hwnd;
++    s->cocoa_window = d->cocoa_window;
++    s->cocoa_view = d->client_view;
++    s->client_cocoa_view = d->client_view;
++    s->real = d;
++    return (struct macdrv_win_data *)s;
++}
++
++static void dxmt_release_win_data(struct macdrv_win_data *data)
++{
++    struct dxmt_win_data *s = (struct dxmt_win_data *)data;
++
++    if (!s) return;
++    release_win_data(s->real);
++    free(s);
++}
++
++__attribute__((visibility("default")))
++void *macdrv_functions[10] = {
++    NULL,                                   /* [0] macdrv_init_display_devices (unused by DXMT) */
++    (void *)dxmt_get_win_data,              /* [1] get_win_data (ABI-shimmed) */
++    (void *)dxmt_release_win_data,          /* [2] release_win_data (ABI-shimmed) */
++    (void *)macdrv_get_cocoa_window,        /* [3] */
++    (void *)macdrv_create_metal_device,     /* [4] */
++    (void *)macdrv_release_metal_device,    /* [5] */
++    (void *)macdrv_view_create_metal_view,  /* [6] */
++    (void *)macdrv_view_get_metal_layer,    /* [7] */
++    (void *)macdrv_view_release_metal_view, /* [8] */
++    (void *)OnMainThread,                   /* [9] */
++};
++
+ #define IS_OPTION_TRUE(ch) \
+     ((ch) == 'y' || (ch) == 'Y' || (ch) == 't' || (ch) == 'T' || (ch) == '1')
+ 

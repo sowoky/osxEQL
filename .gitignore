@@ -1,0 +1,18 @@
+# Build artifacts & large payloads — shipped via GitHub Releases, NEVER committed.
+# The Wine runtime (~569 MB), DXMT, the EQ client (~7 GB) and the prefix all live
+# in ~/Library/Application Support/osxEQL/ (outside this tree) or under dist/.
+/dist/
+/build/
+*.dmg
+*.pkg
+*.iconset/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Logs / scratch
+*.log

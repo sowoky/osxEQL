@@ -1,0 +1,82 @@
+#!/bin/bash
+# osxEQL — open-source EverQuest Legends on macOS (Wine + DXMT, no CrossOver).
+# Headless engine CLI. The macOS app is a thin GUI over these same commands.
+HERE="$(cd "$(dirname "$0")" && pwd)"; . "$HERE/lib.sh"
+
+usage() {
+cat <<EOF
+osxEQL — run EverQuest Legends on Apple Silicon with open-source parts only.
+
+  osxeql setup                 Stage Wine + DXMT and create the prefix
+  osxeql install [setup.exe]   Run the Daybreak installer (downloads the client)
+  osxeql import-client <dir>   Copy an existing EQL install into the prefix (testing)
+  osxeql play                  Launch the game
+  osxeql backend <dxmt|wined3d>  Switch the D3D11->Metal backend
+  osxeql status                Show what's installed
+  osxeql doctor                Sanity-check the runtime
+
+Paths:  prefix=$WINEPREFIX
+        wine=$WINE_DIR  backend=$(cat "$OSXEQL_HOME/backend.active" 2>/dev/null || echo none)
+EOF
+}
+
+cmd_setup() {
+    bash "$HERE/01-stage-runtime.sh" || exit 1
+    bash "$HERE/02-create-prefix.sh" || exit 1
+    bash "$HERE/03-install-backend.sh" dxmt || exit 1
+    log "setup complete. Next: osxeql install   (or import-client <dir>), then osxeql play"
+}
+
+cmd_import_client() {
+    local src="$1"
+    [ -d "$src" ] || die "source dir not found: $src"
+    [ -f "$src/eqgame.exe" ] || die "no eqgame.exe in $src — not an EQL install dir"
+    have_prefix || die "no prefix — run: osxeql setup"
+    log "importing client from: $src"
+    mkdir -p "$EQ_UNIXDIR"
+    # ditto is macOS-native and robust (macOS 26 ships openrsync, which lacks
+    # rsync's --info flags). Copies src's contents into the dest dir.
+    ditto "$src" "$EQ_UNIXDIR" || die "import failed"
+    have_eq && log "client imported -> $EQ_UNIXDIR ($(du -sh "$EQ_UNIXDIR" 2>/dev/null | cut -f1))"
+}
+
+cmd_install() {
+    local setup="${1:-$CACHE/EQLegends_setup.exe}"
+    have_prefix || die "no prefix — run: osxeql setup"
+    [ -f "$setup" ] || die "installer not found: $setup
+Provide the Daybreak installer:  osxeql install /path/to/EQLegends_setup.exe"
+    wine_env
+    log "running EQL installer (install to a SUBFOLDER, never C:\\ root)..."
+    # NSIS silent install into the standard Daybreak games path.
+    "$WINE" "$setup" || warn "installer returned non-zero (often normal for the bootstrap)"
+    log "if the launcher opened, let it finish patching, then: osxeql play"
+}
+
+cmd_status() {
+    echo "wine:    $(have_wine && "$WINE" --version 2>/dev/null || echo 'not staged')"
+    echo "prefix:  $(have_prefix && echo "$WINEPREFIX" || echo 'none')"
+    echo "backend: $(cat "$OSXEQL_HOME/backend.active" 2>/dev/null || echo none)"
+    echo "EQL:     $(have_eq && echo "installed ($EQ_UNIXDIR)" || echo 'not installed')"
+}
+
+cmd_doctor() {
+    echo "== osxEQL doctor =="
+    cmd_status
+    have_wine && {
+        echo "-- dxmt builtin present in wine tree? --"
+        ls -la "$WINE_DIR"/lib/wine/x86_64-windows/winemetal.dll 2>/dev/null || echo "  winemetal.dll MISSING (backend not dxmt?)"
+        ls -la "$WINE_DIR"/lib/wine/x86_64-unix/winemetal.so 2>/dev/null || echo "  winemetal.so MISSING"
+    }
+}
+
+case "${1:-}" in
+    setup)         cmd_setup ;;
+    install)       shift; cmd_install "$@" ;;
+    import-client) shift; cmd_import_client "$@" ;;
+    play)          bash "$HERE/04-launch.sh" ;;
+    backend)       shift; bash "$HERE/03-install-backend.sh" "$@" ;;
+    status)        cmd_status ;;
+    doctor)        cmd_doctor ;;
+    ""|-h|--help)  usage ;;
+    *)             die "unknown command '$1' (see: osxeql --help)" ;;
+esac
