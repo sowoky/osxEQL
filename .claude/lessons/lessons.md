@@ -48,6 +48,27 @@ Read this at session start. Receipts (full write-ups) live in `docs/JOURNEY.md`.
   identity, not "osxEQL" branding — a properly branded single non-bouncing tile needs a real
   Cocoa launcher (the packaging task), not a bash `exec`.
 
+## Display / window sizing
+
+- **Mouse clicks landing in the wrong place = Wine virtual desktop size ≠ eqclient.ini
+  `WindowedWidth/Height`.** EQ maps input coordinates in ITS own resolution; DXMT renders to a
+  surface fixed at the `explorer /desktop=osxEQL,WxH` size. If the two disagree, every click is
+  offset by the ratio. The `.app` used to hardcode 1280×960 on both sides (worked, but a small
+  window on a big display). **Dragging the window bigger mid-game re-breaks it**: EQ rewrites
+  `WindowedWidth/Height` to the new pixel size, but DXMT's render surface stays at the launch
+  size → desync. There is no "resizable window" under this DXMT+virtual-desktop setup; you pick
+  the size at launch. Fix (2026-07-01): `app/launcher.sh` pins BOTH sides from one var
+  `OSXEQL_W`/`OSXEQL_H` (default 3420×1505 to fill Kyle's 3840×1600 ultrawide; env-overridable),
+  so `fix_eqclient` and the `explorer` desktop always agree. To retune size: set `OSXEQL_W`/
+  `OSXEQL_H` (no rebuild needed) or edit the defaults in `app/launcher.sh` → rebuild/re-sign.
+
+- **The `.app` IS generated from the repo now.** `packaging/build-app.sh` does
+  `install app/launcher.sh → Contents/MacOS/osxEQL` then `codesign --force --deep --sign -`.
+  The live app is at `/Applications/osxEQL.app` (not `~/Desktop` — that older note is stale).
+  To patch a running install without a full rebuild: edit `app/launcher.sh`, `install -m 0755`
+  it over `Contents/MacOS/osxEQL`, then `codesign --force --deep --sign - /Applications/osxEQL.app`
+  (editing any bundle file breaks the ad-hoc signature → "damaged"/won't-launch until re-signed).
+
 ## Packaging / distribution (shareable build)
 
 - **The Wine runtime is fully portable — do NOT waste time "bundling dylibs."** `otool`

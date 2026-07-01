@@ -43,6 +43,14 @@ BOOT_LP="$WINEPREFIX/drive_c/LaunchPad.exe"           # where EQLegends_setup.ex
 BOOT_WINPATH='C:\LaunchPad.exe'
 EQL_URL="https://www.everquest.com/"
 
+# ---- window size (project gotcha #4) --------------------------------------
+# The Wine virtual desktop AND eqclient.ini's WindowedWidth/Height MUST be the
+# same, or EQ maps mouse clicks to the wrong pixels. DXMT's render surface is
+# fixed at launch, so do NOT resize the window mid-game — it re-breaks the
+# mouse. Default fills the 3840x1600 ultrawide; override with OSXEQL_W/OSXEQL_H.
+OSXEQL_W="${OSXEQL_W:-3420}"
+OSXEQL_H="${OSXEQL_H:-1505}"
+
 osa(){ /usr/bin/osascript "$@" 2>/dev/null; }
 alert(){ osa -e "display alert \"osxEQL\" message \"$1\" as critical"; }
 
@@ -102,19 +110,19 @@ OSA
     fi
 }
 
-# ---- match the EQ window to our 1280x960 desktop (project gotcha #4) -------
+# ---- match the EQ window to our Wine virtual desktop (project gotcha #4) ----
 fix_eqclient(){
     local ini="$GAME_DIR/eqclient.ini"
     [ -f "$ini" ] || return 0
     [ -f "$ini.osxeql-bak" ] || cp "$ini" "$ini.osxeql-bak"
-    /usr/bin/python3 - "$ini" <<'PY'
+    /usr/bin/python3 - "$ini" "$OSXEQL_W" "$OSXEQL_H" <<'PY'
 import sys, re
-p = sys.argv[1]
+p, w, h = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(p, "rb").read().decode("latin-1")          # eqclient.ini is CRLF/latin-1
 def setk(k, v, s):
     pat = re.compile(r'(?im)^(\s*' + re.escape(k) + r'\s*=).*?(\r?)$')
     return pat.sub(lambda m: m.group(1) + v + (m.group(2) or "\r"), s) if pat.search(s) else s
-for k, v in (("Fullscreen", "0"), ("WindowedWidth", "1280"), ("WindowedHeight", "960")):
+for k, v in (("Fullscreen", "0"), ("WindowedWidth", w), ("WindowedHeight", h)):
     s = setk(k, v, s)
 open(p, "wb").write(s.encode("latin-1"))
 PY
@@ -133,4 +141,4 @@ fi
 
 cd "$GAME_DIR" 2>/dev/null || cd "$WINEPREFIX/drive_c"
 # LaunchPad in a wine virtual desktop (avoids its splash-window deadlock).
-exec "$WINE" explorer /desktop=osxEQL,1280x960 "$LP_WINPATH" >"$LOG" 2>&1
+exec "$WINE" explorer "/desktop=osxEQL,${OSXEQL_W}x${OSXEQL_H}" "$LP_WINPATH" >"$LOG" 2>&1

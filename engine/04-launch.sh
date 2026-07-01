@@ -17,6 +17,11 @@ log "game's own debug log: $EQ_UNIXDIR/Logs/dbg.txt"
 # keep the Mac awake while the game runs
 caffeinate -dimsu -w $$ &
 
+# Virtual-desktop size. Must match eqclient.ini WindowedWidth/Height or the
+# mouse maps to the wrong pixels (gotcha #4). Default 1280x960 for headless
+# `patchme` verification; override with OSXEQL_W/OSXEQL_H (the .app uses 3420x1505).
+OSXEQL_W="${OSXEQL_W:-1280}"
+OSXEQL_H="${OSXEQL_H:-960}"
 cd "$EQ_UNIXDIR" || die "cd to EQ dir failed"
-exec "$WINE" explorer /desktop=osxEQL,1280x960 \
+exec "$WINE" explorer "/desktop=osxEQL,${OSXEQL_W}x${OSXEQL_H}" \
     "$EQ_WINDIR\\LaunchPad.exe" >"$launchlog" 2>&1
