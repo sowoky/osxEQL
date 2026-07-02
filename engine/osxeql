@@ -12,6 +12,9 @@ osxEQL — run EverQuest Legends on Apple Silicon with open-source parts only.
   osxeql import-client <dir>   Copy an existing EQL install into the prefix (testing)
   osxeql play                  Launch the game
   osxeql backend <dxmt|wined3d>  Switch the D3D11->Metal backend
+  osxeql res [auto|max|WxH]    Game window size used by the .app (no arg: show).
+                               auto = fit current main display (default),
+                               max = exact display size, WxH = pin e.g. 3800x1550
   osxeql status                Show what's installed
   osxeql doctor                Sanity-check the runtime
 
@@ -59,6 +62,23 @@ cmd_status() {
     echo "EQL:     $(have_eq && echo "installed ($EQ_UNIXDIR)" || echo 'not installed')"
 }
 
+cmd_res() {
+    local f="$OSXEQL_HOME/resolution" cur disp
+    if [ $# -eq 0 ]; then
+        cur="$(cat "$f" 2>/dev/null || echo auto)"
+        disp="$(osascript -l JavaScript -e 'ObjC.import("CoreGraphics"); const d=$.CGMainDisplayID(); $.CGDisplayPixelsWide(d)+"x"+$.CGDisplayPixelsHigh(d)' 2>/dev/null || echo '?')"
+        echo "setting: $cur   (main display now: $disp; auto = display minus 40x60 chrome)"
+        return 0
+    fi
+    case "$1" in
+        auto)          rm -f "$f"; echo "resolution: auto (fit current display at each launch)" ;;
+        max)           echo max > "$f"; echo "resolution: max (exact display size)" ;;
+        [0-9]*x[0-9]*) echo "$1" > "$f"; echo "resolution: pinned to $1" ;;
+        *)             die "usage: osxeql res [auto|max|WxH]" ;;
+    esac
+    echo "takes effect next launch of the .app (osxeql play keeps its own 1280x960 verification default)"
+}
+
 cmd_doctor() {
     echo "== osxEQL doctor =="
     cmd_status
@@ -75,6 +95,7 @@ case "${1:-}" in
     import-client) shift; cmd_import_client "$@" ;;
     play)          bash "$HERE/04-launch.sh" ;;
     backend)       shift; bash "$HERE/03-install-backend.sh" "$@" ;;
+    res)           shift; cmd_res "$@" ;;
     status)        cmd_status ;;
     doctor)        cmd_doctor ;;
     ""|-h|--help)  usage ;;

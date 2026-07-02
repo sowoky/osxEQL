@@ -54,15 +54,19 @@ patched Wine do. **That symbol is the crux of this whole project.**
    → `<wine>/lib/wine/{x86_64,i386}-windows/`; `winemetal.so` → `.../x86_64-unix/`; AND
    `winemetal.dll` ALSO copied to `<prefix>/drive_c/windows/system32/`. Missing the last one
    = `Unable to load EQGraphics.DLL (126)` (dependency-not-found cascade).
-4. **eqclient.ini is CRLF; the invariant is `WindowedWidth/Height == the Wine virtual
-   desktop size`.** Anchored `sed`/regex without `\r` silently no-ops — use Python with `\b`.
-   Set `Fullscreen=0` and `WindowedWidth/Height` to MATCH the `explorer /desktop=osxEQL,WxH`
-   size. Any mismatch → mouse-cursor offset (EQ maps clicks in ITS resolution inside a
-   differently-sized surface) AND the fullscreen-exclusive popup. The `.app` now pins BOTH
-   sides from one var: `OSXEQL_W`/`OSXEQL_H` in `app/launcher.sh` (default **3420×1505**, fills
-   Kyle's 3840×1600 ultrawide; env-overridable). **Do NOT drag the window bigger mid-game** —
-   DXMT's render surface is fixed at launch, so resizing re-desyncs input from render and
-   re-breaks the mouse (that was the 2026-07-01 report). Pick the size at launch instead.
+4. **eqclient.ini is CRLF; the invariant is `ini sizes == the Wine virtual desktop size`.**
+   Anchored `sed`/regex without `\r` silently no-ops — use Python with `\b`. Any mismatch →
+   mouse-cursor offset (EQ maps clicks in ITS resolution inside a differently-sized surface)
+   AND the fullscreen-exclusive popup. EQ has TWO size key pairs: `WindowedWidth/Height`
+   (windowed) and `Width/Height` (in-game fullscreen) — the `.app` pins ALL FOUR plus the
+   `explorer /desktop=osxEQL,WxH` size from one resolved value (`resolve_size` in
+   `app/launcher.sh`), re-resolved at every launch: env `OSXEQL_W/H` > pin file
+   `~/Library/Application Support/osxEQL/resolution` (`WxH`|`max`|`auto`, set via
+   `osxeql res`) > auto = current main display (CoreGraphics, points) minus 40×60 chrome.
+   Kyle swaps between a 3840×1600 ultrawide and the built-in display — hardcoded defaults
+   WILL break one of them; that's why it auto-detects. **Do NOT drag the window bigger
+   mid-game** — DXMT's render surface is fixed at launch; EQ rewrites the ini to the dragged
+   size and input desyncs from render (the 2026-07-01/02 reports). Relaunch instead.
    Backup before editing → `eqclient.ini.osxeql-bak`.
 5. **macOS 26 ships openrsync** (no `--info=progress2`). Use `ditto` to copy the client.
 6. **Old Wine (8.x) hangs at `wineboot` on macOS 26.** Need Wine 10/11. (DXMT v0.80 needs

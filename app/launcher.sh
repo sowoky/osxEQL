@@ -44,12 +44,33 @@ BOOT_WINPATH='C:\LaunchPad.exe'
 EQL_URL="https://www.everquest.com/"
 
 # ---- window size (project gotcha #4) --------------------------------------
-# The Wine virtual desktop AND eqclient.ini's WindowedWidth/Height MUST be the
-# same, or EQ maps mouse clicks to the wrong pixels. DXMT's render surface is
-# fixed at launch, so do NOT resize the window mid-game — it re-breaks the
-# mouse. Default fills the 3840x1600 ultrawide; override with OSXEQL_W/OSXEQL_H.
-OSXEQL_W="${OSXEQL_W:-3420}"
-OSXEQL_H="${OSXEQL_H:-1505}"
+# The Wine virtual desktop AND eqclient.ini's sizes MUST agree or mouse input
+# is offset. Size is resolved fresh at every launch so switching between the
+# ultrawide and the built-in display just works. Precedence:
+#   1. OSXEQL_W/OSXEQL_H env vars
+#   2. ~/Library/Application Support/osxEQL/resolution — "WxH" pin, "auto", or "max"
+#   3. auto (default): current main display minus window chrome (menu+title bar)
+resolve_size(){
+    local mode="auto" pin disp dw dh
+    if [ -n "${OSXEQL_W:-}" ] && [ -n "${OSXEQL_H:-}" ]; then return 0; fi
+    if [ -f "$OSXEQL_HOME/resolution" ]; then
+        pin="$(tr -cd '0-9xa-z' < "$OSXEQL_HOME/resolution")"
+        case "$pin" in
+            max)      mode="max" ;;
+            [0-9]*x[0-9]*) OSXEQL_W="${pin%%x*}"; OSXEQL_H="${pin##*x}"; return 0 ;;
+        esac
+    fi
+    # main-display size in points via CoreGraphics — fast, no permission prompts
+    disp="$(osascript -l JavaScript -e 'ObjC.import("CoreGraphics"); const d=$.CGMainDisplayID(); $.CGDisplayPixelsWide(d)+"x"+$.CGDisplayPixelsHigh(d)' 2>/dev/null)"
+    dw="${disp%%x*}"; dh="${disp##*x}"
+    case "${dw}${dh}" in *[!0-9]*|"") dw=1920; dh=1080 ;; esac
+    if [ "$mode" = "max" ]; then
+        OSXEQL_W="$dw"; OSXEQL_H="$dh"
+    else
+        OSXEQL_W=$((dw - 40)); OSXEQL_H=$((dh - 60))
+    fi
+}
+resolve_size
 
 osa(){ /usr/bin/osascript "$@" 2>/dev/null; }
 alert(){ osa -e "display alert \"osxEQL\" message \"$1\" as critical"; }
@@ -122,7 +143,10 @@ s = open(p, "rb").read().decode("latin-1")          # eqclient.ini is CRLF/latin
 def setk(k, v, s):
     pat = re.compile(r'(?im)^(\s*' + re.escape(k) + r'\s*=).*?(\r?)$')
     return pat.sub(lambda m: m.group(1) + v + (m.group(2) or "\r"), s) if pat.search(s) else s
-for k, v in (("Fullscreen", "0"), ("WindowedWidth", w), ("WindowedHeight", h)):
+# Pin windowed AND fullscreen sizes to the virtual-desktop size: EQ's in-game
+# fullscreen toggle uses Width/Height, so both modes stay 1:1 with the desktop.
+for k, v in (("Fullscreen", "0"), ("Width", w), ("Height", h),
+             ("WindowedWidth", w), ("WindowedHeight", h)):
     s = setk(k, v, s)
 open(p, "wb").write(s.encode("latin-1"))
 PY

@@ -50,17 +50,22 @@ Read this at session start. Receipts (full write-ups) live in `docs/JOURNEY.md`.
 
 ## Display / window sizing
 
-- **Mouse clicks landing in the wrong place = Wine virtual desktop size ≠ eqclient.ini
-  `WindowedWidth/Height`.** EQ maps input coordinates in ITS own resolution; DXMT renders to a
-  surface fixed at the `explorer /desktop=osxEQL,WxH` size. If the two disagree, every click is
-  offset by the ratio. The `.app` used to hardcode 1280×960 on both sides (worked, but a small
-  window on a big display). **Dragging the window bigger mid-game re-breaks it**: EQ rewrites
-  `WindowedWidth/Height` to the new pixel size, but DXMT's render surface stays at the launch
-  size → desync. There is no "resizable window" under this DXMT+virtual-desktop setup; you pick
-  the size at launch. Fix (2026-07-01): `app/launcher.sh` pins BOTH sides from one var
-  `OSXEQL_W`/`OSXEQL_H` (default 3420×1505 to fill Kyle's 3840×1600 ultrawide; env-overridable),
-  so `fix_eqclient` and the `explorer` desktop always agree. To retune size: set `OSXEQL_W`/
-  `OSXEQL_H` (no rebuild needed) or edit the defaults in `app/launcher.sh` → rebuild/re-sign.
+- **Mouse clicks landing in the wrong place = Wine virtual desktop size ≠ eqclient.ini sizes.**
+  EQ maps input coordinates in ITS own resolution; DXMT renders to a surface fixed at the
+  `explorer /desktop=osxEQL,WxH` size. If the two disagree, every click is offset by the ratio.
+  EQ has TWO size key pairs: `WindowedWidth/Height` (windowed mode) and `Width/Height`
+  (in-game fullscreen) — pin BOTH pairs or "fullscreen" renders at the stale `Width/Height`
+  (the "fullscreen is a smallish window" report). **Dragging the window bigger mid-game
+  re-breaks it**: EQ rewrites the ini to the new size, but DXMT's render surface stays at the
+  launch size → desync. There is no resizable window under this DXMT+virtual-desktop setup;
+  size is chosen at launch, relaunch to change it.
+  History: v1 hardcoded 1280×960 (small window on the ultrawide); v2 (2026-07-01) hardcoded
+  3420×1505 (right for the ultrawide, wrong the moment Kyle undocked to the built-in display —
+  he swaps displays routinely, so ANY hardcoded size is a bug). v3 (2026-07-02): `resolve_size`
+  in `app/launcher.sh` re-resolves at every launch — env `OSXEQL_W/H` > pin file
+  `$OSXEQL_HOME/resolution` (`WxH`|`max`|`auto`, managed by `osxeql res`) > auto-detect the
+  main display via CoreGraphics in points (`osascript -l JavaScript` + `CGDisplayPixelsWide` —
+  fast, no TCC permission prompt, unlike Finder AppleScript) minus 40×60 for menu/title bar.
 
 - **The `.app` IS generated from the repo now.** `packaging/build-app.sh` does
   `install app/launcher.sh → Contents/MacOS/osxEQL` then `codesign --force --deep --sign -`.
