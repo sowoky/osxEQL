@@ -106,7 +106,10 @@ Read this at session start. Receipts (full write-ups) live in `docs/JOURNEY.md`.
   Daybreak, you need an account" is the correct framing in the wizard/notices.
 
 - **Unsigned distribution:** app is ad-hoc signed (no Apple Developer ID). Downloaded DMG
-  is quarantined → first open needs right-click→Open or Privacy&Security "Open Anyway".
+  is quarantined → the documented first-open step is
+  `xattr -dr com.apple.quarantine /Applications/osxEQL.app` (right-click→Open doesn't
+  reliably bypass Gatekeeper for unsigned apps on current macOS — Kyle's directive
+  2026-07-03: instruct the xattr command, no dev account planned).
   `build-app.sh` does `codesign --force --deep --sign -`; editing the bundle later requires
   re-signing.
 

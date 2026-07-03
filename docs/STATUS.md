@@ -88,8 +88,9 @@ The "ship it to other Macs" work is complete and on GitHub.
 
 ## Remaining (optional polish)
 - **Notarization.** The DMG/app is ad-hoc signed (unsigned) → first-open needs
-  right-click→Open. A $99/yr Apple Developer ID + notarize step would remove the
-  Gatekeeper prompt. Deferred by choice.
+  `xattr -dr com.apple.quarantine /Applications/osxEQL.app` (right-click→Open no
+  longer bypasses Gatekeeper for unsigned apps on current macOS). A $99/yr Apple
+  Developer ID + notarize step would remove this. Deferred by choice — no dev account.
 - **Full cold end-to-end on a clean machine.** Verified component-by-component on this
   Mac; a from-zero run on a fresh macOS account (login + real download) is the last
   belt-and-suspenders check.

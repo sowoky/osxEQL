@@ -20,9 +20,14 @@ open-source Wine (compiled from CodeWeavers' published LGPL source) + **DXMT**
 
 1. Download **`osxEQL-<version>.dmg`** from the [Releases](../../releases) page.
 2. Open it and drag **osxEQL** into **Applications**.
-3. **First open:** the app isn't signed by Apple, so right-click (Control-click)
-   **osxEQL → Open → Open**. (If macOS still refuses: System Settings → Privacy &
-   Security → scroll down → **Open Anyway**.)
+3. **First open:** the app isn't signed by Apple, so macOS blocks it ("damaged" /
+   "can't be opened"). Clear the quarantine flag once — open **Terminal** and run:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/osxEQL.app
+   ```
+
+   After that it opens normally, every time.
 4. Download **`EQLegends_setup.exe`** from the official EverQuest Legends site
    (you need a Daybreak account).
 5. Launch **osxEQL**. It asks you to pick that installer, runs it, then opens the
