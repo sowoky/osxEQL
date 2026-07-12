@@ -69,7 +69,7 @@ osxEQL/
 │                             #   installs). launcher.sh uses it only if prefix/ has no system.reg.
 ├── backends/dxmt-v0.80/      # extracted DXMT release (the open-source backend DLLs + winemetal.so)
 ├── cache/                    # downloaded Wine/DXMT tarballs
-├── build/                    # vanilla-Wine build workspace (engine/build-wine.sh)
+├── build/                    # Wine build workspace — CrossOver LGPL sources (engine/build-wine.sh)
 └── logs/                     # wineboot / launch / build logs
 ```
 

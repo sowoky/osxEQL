@@ -14,6 +14,12 @@
 #
 #   packaging/bundle-dylibs.sh <wine-root>   # e.g. dist/osxEQL.app/Contents/Resources/Wine
 #
+# Known non-goal: no Vulkan ICD json is bundled, so on a brew-less Mac the
+# bundled libvulkan/libMoltenVK find no driver and winevulkan reports no
+# devices. That is FINE — EQL renders through DXMT (D3D11→Metal), not Vulkan.
+# Don't "fix" it by pointing anything back at /usr/local; if the dxvk fallback
+# backend ever needs it, ship a relative ICD json + VK_DRIVER_FILES instead.
+#
 # Discovery is automatic — strings-scan of the unix .so files for sonames that
 # exist under /usr/local/lib, then otool + strings recursion over everything
 # bundled until fixpoint (catches runtime dlopens like sdl2-compat -> libSDL3

@@ -5,9 +5,11 @@
 **independent of CrossOver**. We reverse-engineered CrossOver to learn the mechanism, then
 rebuilt it from OSS parts.
 
-**STATUS: it works.** EQL launches and renders on the M5 (M-series) via DXMT — proven to
-character/server select. The remaining work is "purity" (replace the borrowed Wine build
-with our own vanilla build) + packaging. See [`docs/STATUS.md`](docs/STATUS.md).
+**STATUS: it works and ships.** EQL launches and renders on the M5 (M-series) via DXMT —
+proven to character/server select. The Wine runtime is our own compile of CodeWeavers'
+published LGPL source (purity done; upstream-vanilla was a dead end — DXMT's macdrv ABI
+needs the CrossOver lineage), and since v0.2.1 the DMG is self-contained (bundled brew
+dylibs — no Homebrew needed by users). See [`docs/STATUS.md`](docs/STATUS.md).
 
 ## One-paragraph mental model
 EQL's `eqgame.exe` is **64-bit** and renders with **DirectX 11**. To run it on macOS you
