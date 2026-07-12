@@ -31,9 +31,19 @@ fi
 
 export WINESERVER="$WINE_DIR/bin/wineserver"
 export WINEDLLPATH="$WINE_DIR/lib/wine/x86_64-windows:$WINE_DIR/lib/wine/i386-windows"
-export WINEDEBUG="-all"
+# fixme-all (not -all): keep err:-class lines in app-launch.log — "-all" gave
+# completely empty logs on user machines and made issue #2 an afternoon to debug.
+export WINEDEBUG="fixme-all"
 export WINEDLLOVERRIDES="mscoree,mshtml="
 export DYLD_FALLBACK_LIBRARY_PATH="$WINE_DIR/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
+# Vulkan: use the bundled MoltenVK via the bundled ICD json (relative path).
+# Without a driver, LaunchPad's CEF UI can crash on Vulkan init on Macs with no
+# Intel Homebrew (issue #2). Guarded so dev trees without the json keep the
+# system ICD search.
+if [ -f "$WINE_DIR/lib/MoltenVK_icd.json" ]; then
+    export VK_DRIVER_FILES="$WINE_DIR/lib/MoltenVK_icd.json"
+    export VK_ICD_FILENAMES="$VK_DRIVER_FILES"
+fi
 # NEVER export WINELOADER — it makes wine copy the loader to a temp dir for child
 # processes which then fail "could not load ntdll.so" (project gotcha #2).
 

@@ -139,8 +139,11 @@ Read this at session start. Receipts (full write-ups) live in `docs/JOURNEY.md`.
   therefore recurses a strings-scan over everything it bundles. If a future lib fails only
   on no-brew machines, suspect another runtime dlopen — `DYLD_PRINT_LIBRARIES=1` on a
   throwaway prefix wineboot shows every load origin.
-- Remaining known /usr/local touch: Vulkan loader finds MoltenVK via brew's ICD JSON
-  (`/usr/local/share/vulkan/icd.d/`). Harmless for EQL — DXMT renders via Metal, not
-  Vulkan; on a clean Mac winevulkan just reports no devices. `libMoltenVK.dylib` IS
-  bundled if the dxvk fallback backend ever needs it (point `VK_DRIVER_FILES` at a
-  relative ICD json).
+- Vulkan is NOT harmless to leave driverless: LaunchPad's CEF UI crashed on Vulkan init
+  on a clean Mac (issue #2, dbspringer). Since v0.2.2 the bundler writes a
+  `MoltenVK_icd.json` with a RELATIVE library_path next to the bundled libMoltenVK, and
+  launcher.sh exports `VK_DRIVER_FILES`/`VK_ICD_FILENAMES` at it — verified: wineboot's
+  dyld trace loads MoltenVK from the bundle, zero /usr/local loads remain.
+- `WINEDEBUG=-all` suppressed even `err:` lines — user bug reports came with EMPTY
+  app-launch.log (issue #2 took an afternoon because of it). The app now uses
+  `fixme-all` (err class stays on). Don't put `-all` back in the shipped launcher.

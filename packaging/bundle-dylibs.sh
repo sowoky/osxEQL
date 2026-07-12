@@ -14,11 +14,11 @@
 #
 #   packaging/bundle-dylibs.sh <wine-root>   # e.g. dist/osxEQL.app/Contents/Resources/Wine
 #
-# Known non-goal: no Vulkan ICD json is bundled, so on a brew-less Mac the
-# bundled libvulkan/libMoltenVK find no driver and winevulkan reports no
-# devices. That is FINE — EQL renders through DXMT (D3D11→Metal), not Vulkan.
-# Don't "fix" it by pointing anything back at /usr/local; if the dxvk fallback
-# backend ever needs it, ship a relative ICD json + VK_DRIVER_FILES instead.
+# Vulkan: a MoltenVK_icd.json with a RELATIVE library_path is generated next to
+# the bundled libMoltenVK.dylib, and launcher.sh points VK_DRIVER_FILES /
+# VK_ICD_FILENAMES at it. Without an ICD the loader reports no devices, and
+# LaunchPad's CEF UI has been seen crashing on Vulkan init on clean Macs
+# (issue #2, dbspringer). EQL's own rendering is DXMT (D3D11→Metal) either way.
 #
 # Discovery is automatic — strings-scan of the unix .so files for sonames that
 # exist under /usr/local/lib, then otool + strings recursion over everything
@@ -103,6 +103,22 @@ for leaf in closure:
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             sys.exit(f"FATAL: {' '.join(cmd)}\n{r.stderr}")
+
+# --- 3.5 Vulkan ICD: point the bundled loader at the bundled MoltenVK --------
+# (relative library_path — the Vulkan loader resolves it against the json's dir)
+if "libMoltenVK.dylib" in closure:
+    import json
+    src_icd = next((p for p in ("/usr/local/etc/vulkan/icd.d/MoltenVK_icd.json",
+                                "/usr/local/share/vulkan/icd.d/MoltenVK_icd.json")
+                    if os.path.exists(p)), None)
+    if not src_icd:
+        sys.exit("FATAL: libMoltenVK bundled but no MoltenVK_icd.json found under /usr/local")
+    with open(src_icd) as fh:
+        icd = json.load(fh)
+    icd["ICD"]["library_path"] = "./libMoltenVK.dylib"
+    with open(os.path.join(lib_dir, "MoltenVK_icd.json"), "w") as fh:
+        json.dump(icd, fh, indent=2)
+    print(f"wrote MoltenVK_icd.json (api_version {icd['ICD'].get('api_version', '?')})")
 
 # --- 4. verify: closure is closed, x86_64, zero /usr/local refs --------------
 fail = False
