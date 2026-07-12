@@ -66,7 +66,7 @@ CrossOver "bottle", so we drive `wineloader` directly with WINEPREFIX/WINEDLLPAT
 - **Fullscreen-exclusive popup:** same `Fullscreen=0` removes EQ's unavailable-display-mode nag.
 - Gotcha: `eqclient.ini` is CRLF; anchored `sed` silently no-ops — edit with Python.
 
-## 7. Build the vanilla Wine (the purity fix, in progress)
+## 7. Build the vanilla Wine (superseded — see the outcome note below)
 `engine/build-wine.sh` compiles `3Shain/wine` (upstream Wine 11.2 + the `macdrv_functions`
 patch) for x86_64 via an Intel Homebrew toolchain + 3Shain's `vanilla.sh`, then swaps the
 result into `osxEQL/Wine/` so **zero CrossOver binaries remain**. Gotchas hit: (a) background
@@ -74,6 +74,11 @@ sudo has no tty → use a temporary `/etc/sudoers.d` NOPASSWD drop-in (cleaned u
 (b) `vanilla.sh` doesn't quote paths → build in a **no-space** directory (`~/osxeql-wine-build`).
 A GitHub-Actions CI attempt was abandoned — its `macos-13` runner never scheduled (sat queued
 22h, compiled nothing) and Kyle wanted local, not CI.
+
+**Outcome:** the vanilla (3Shain/wine 11.2) route was dropped — DXMT v0.80's macdrv ABI
+matches CrossOver's Wine, not vanilla 11.x. The shipped runtime is compiled from
+CodeWeavers' published LGPL `crossover-sources-26.2.0.tar.gz` instead (same script,
+different source; see STATUS "Why CrossOver's source").
 
 ## Missteps to learn from
 - Claimed work was "compiling in CI" when the run was stuck queued and had produced nothing —
@@ -117,4 +122,44 @@ ignores SIGTERM) but don't respawn without a wineserver.
 hand-built and ad-hoc code-signed (`com.osxeql.launcher`). Editing its `Contents/MacOS/osxEQL`
 invalidates the signature → re-sign with `codesign --force --sign - osxEQL.app`. Packaging
 (task: self-contained app) should generate this launcher from a repo template carrying the
-same winetemp guard.
+same winetemp guard. (Done — `app/launcher.sh` + `packaging/` since v0.2.0.)
+
+## 9. Shipping to strangers: the clean-Mac failures (2026-07-10 → 07-12)
+
+v0.2.0 went on GitHub and immediately failed on Macs that weren't the build
+machine. Two community reports (CosmicMunkey, dbspringer/issue #2) plus our own
+wipe-and-reinstall test turned up three distinct bugs, each invisible at home:
+
+**The runtime was never portable.** §"Shareable" above originally claimed
+`otool` proved zero external deps. Wrong tool: wine *dlopens*
+`libfreetype/libgnutls/libSDL2/libvulkan` by bare soname — no load command, so
+`otool -L` shows nothing — resolved via the `LC_RPATH /usr/local/lib` in every
+wine image. On the build machine Intel Homebrew satisfied it silently; on a
+clean Mac fonts died and LaunchPad's CEF crashed on Vulkan init. Fix (v0.2.1/2):
+`packaging/bundle-dylibs.sh` strings-scans the unix .so files for dlopened
+sonames, walks the otool+strings closure to a fixpoint (that recursion caught
+brew's sdl2-compat dlopening `libSDL3.dylib` at runtime), copies ~17 dylibs
+into `Wine/lib`, rewrites install names to `@loader_path`, re-signs, and fails
+the build if any `/usr/local` ref survives — plus a `MoltenVK_icd.json` with a
+relative `library_path` so Vulkan has a driver. Rpath order makes `Wine/lib`
+win even when brew exists. Also: `WINEDEBUG=-all` had been suppressing even
+`err:` lines, so user crash reports arrived with empty logs — now `fixme-all`.
+
+**Daybreak's installer registers LaunchPad at the literal path `C:`.** In
+ApplicationRegistry.xml, `Path="C:"` — written by the silent installer before
+LaunchPad ever runs, so it hits every fresh install. The launcher's self-patch
+resolves it into a directory literally named `C:` under `Installed Games/`,
+downloads its entire update there (67.9 MB incl. libcef.dll), then dies with
+`InitWebCoreFailed` because `C:\LaunchPad.libs` never got the CEF payload —
+window closes with zero indication. Users had to relaunch (the reactive heal
+from PR #3 fixed the layout on the second run). v0.3.0 kills the relaunch:
+`post_install_fixup` moves the bootstrap into the game dir and rewrites the
+registration BEFORE first boot, and the launcher supervises LaunchPad — parses
+its logs (state vocabulary: `docs/LAUNCHPAD-LOGS.md`), drives a native setup
+window (`app/progress-helper.swift`) from click to installed, chimes at the
+login screen, and auto-heals + relaunches if the C: signature ever reappears.
+
+**Proof:** 2026-07-12, kyle-mac wiped to never-ran (no brew, no CrossOver, no
+runtime), v0.3.0 DMG downloaded from GitHub — one launch, straight through to
+login, 6 GB download, in game. The Mac that built the project is now just
+another user machine.

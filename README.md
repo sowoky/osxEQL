@@ -30,9 +30,10 @@ open-source Wine (compiled from CodeWeavers' published LGPL source) + **DXMT**
    After that it opens normally, every time.
 4. Download **`EQLegends_setup.exe`** from the official EverQuest Legends site
    (you need a Daybreak account).
-5. Launch **osxEQL**. It asks you to pick that installer, runs it, then opens the
-   launcher. Log in, let it download the game, hit **Play**. Done — every launch
-   after that goes straight to the launcher.
+5. Launch **osxEQL**. A setup window walks the whole install: pick the installer
+   when asked, then watch it run Daybreak's installer, update the launcher, and
+   download the game — you get a chime when the login screen is ready. Log in,
+   hit **Play**. Every launch after that goes straight to the launcher.
 
 Nothing else to install: no Homebrew, no Xcode, no Wine — the runtime ships inside
 the app.
