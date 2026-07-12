@@ -7,9 +7,15 @@
 # OUTSIDE the app in ~/Library/Application Support/osxEQL (they persist across updates
 # and must not bloat the .app).
 #
-# On first run (no LaunchPad found) it walks the user through Daybreak's installer,
-# then opens the launcher. Subsequent runs go straight to the game.
+# Two modes:
+#  - INSTALL (no eqgame.exe yet): a native setup window (Resources/osxeql-progress)
+#    stays up from launch, narrates every step, and the script SUPERVISES LaunchPad —
+#    it pre-fixes Daybreak's Path="C:" registration bug, tails LaunchPad's own logs
+#    for phase/progress, notifies when the login screen is ready, and self-heals +
+#    relaunches if the launcher dies mid-install. One click → login screen.
+#  - PLAY (game installed): straight to LaunchPad, no window (unchanged fast path).
 set -u
+trap '' PIPE
 
 # ---- locate the embedded runtime ------------------------------------------
 SELF="$(cd "$(dirname "$0")" && pwd)"                 # .../Contents/MacOS
@@ -52,6 +58,8 @@ GAME_DIR="$WINEPREFIX/drive_c/users/Public/Daybreak Game Company/Installed Games
 GAME_LP="$GAME_DIR/LaunchPad.exe"
 BOOT_LP="$WINEPREFIX/drive_c/LaunchPad.exe"           # where EQLegends_setup.exe /S lands it
 BOOT_WINPATH='C:\LaunchPad.exe'
+MISPLACED_DIR="$WINEPREFIX/drive_c/users/Public/Daybreak Game Company/Installed Games/C:"
+LP_LOGS="$GAME_DIR/LaunchPad.libs/Logs"
 EQL_URL="https://www.everquest.com/"
 
 # ---- window size (project gotcha #4) --------------------------------------
@@ -85,6 +93,22 @@ resolve_size
 
 osa(){ /usr/bin/osascript "$@" 2>/dev/null; }
 alert(){ osa -e "display alert \"osxEQL\" message \"$1\" as critical"; }
+
+# ---- setup window (install mode only) --------------------------------------
+# Resources/osxeql-progress shows a native window; we feed it one command per
+# line on fd 9 (PHASE/DETAIL/PROGRESS/INDET/LOG/READY/DONE/FAIL/QUIT).
+PROGRESS_ON=""
+progress(){ [ -n "$PROGRESS_ON" ] && printf '%s\n' "$*" >&9 2>/dev/null || true; }
+start_progress_window(){
+    [ -x "$RES/osxeql-progress" ] || return 0
+    local fifo="${TMPDIR:-/tmp}/osxeql-progress-$$.fifo"
+    rm -f "$fifo"
+    mkfifo "$fifo" 2>/dev/null || return 0
+    "$RES/osxeql-progress" < "$fifo" &
+    exec 9>"$fifo"
+    rm -f "$fifo"
+    PROGRESS_ON=1
+}
 
 # ---- sanity: runtime present ----------------------------------------------
 if [ ! -x "$WINE" ]; then
@@ -120,25 +144,81 @@ ensure_prefix(){
 run_installer(){
     local choice setup
     choice=$(osa <<'OSA'
-set msg to "Welcome to osxEQL." & return & return & "EverQuest Legends is NOT included — it's Daybreak's game. First download EQLegends_setup.exe from the official site (you need a Daybreak/EQ Legends account). Then choose that file below." & return & return & "osxEQL runs Daybreak's installer, then opens the launcher so you can log in and download the game."
+set msg to "Welcome to osxEQL." & return & return & "EverQuest Legends is NOT included — it's Daybreak's game. First download EQLegends_setup.exe from the official site (you need a Daybreak/EQ Legends account). Then choose that file below." & return & return & "osxEQL runs Daybreak's installer, then walks the install through to the login screen."
 set r to display dialog msg buttons {"Quit", "Open EQ Legends site", "Choose installer…"} default button "Choose installer…" with title "osxEQL — First-time setup" with icon note
 return button returned of r
 OSA
 )
     case "$choice" in
-        "Open EQ Legends site") open "$EQL_URL"; exit 0 ;;
+        "Open EQ Legends site") open "$EQL_URL"; progress QUIT; exit 0 ;;
         "Choose installer…") : ;;
-        *) exit 0 ;;
+        *) progress QUIT; exit 0 ;;
     esac
     setup=$(osa -e 'POSIX path of (choose file with prompt "Select EQLegends_setup.exe" default location (path to downloads folder))')
-    if [ -z "$setup" ] || [ ! -f "$setup" ]; then alert "No installer selected — setup cancelled."; exit 1; fi
+    if [ -z "$setup" ] || [ ! -f "$setup" ]; then
+        progress QUIT
+        alert "No installer selected — setup cancelled."
+        exit 1
+    fi
+    progress PHASE "Setting up the Wine environment"
+    progress INDET
     ensure_prefix
-    osa -e 'display dialog "Installing the EverQuest launcher — this takes about a minute. Click OK and wait for the launcher window to appear." buttons {"OK"} default button 1 with title "osxEQL" with icon note' >/dev/null
+    progress PHASE "Installing Daybreak's launcher"
     "$WINE" "$setup" /S >"$OSXEQL_HOME/logs/install.log" 2>&1
     "$WINESERVER" -w 2>/dev/null
-    if [ ! -f "$BOOT_LP" ]; then
+    if [ ! -f "$BOOT_LP" ] && [ ! -f "$GAME_LP" ]; then
+        progress FAIL "Daybreak's installer didn't produce a launcher"
+        progress DETAIL "See install.log in ~/Library/Application Support/osxEQL/logs"
         alert "Daybreak's installer finished but LaunchPad wasn't found. See logs/install.log in ~/Library/Application Support/osxEQL."
         exit 1
+    fi
+}
+
+# ---- pre-fix Daybreak's Path="C:" registration bug -------------------------
+# The silent installer drops LaunchPad at C:\ and registers the app with the
+# literal path "C:" in ApplicationRegistry.xml. Under wine the self-patcher then
+# writes the whole updated launcher into a folder NAMED "C:" under Installed
+# Games and dies with InitWebCoreFailed (issue #2 / first-run capture
+# 2026-07-12). Moving the bootstrap into the game dir and fixing the
+# registration BEFORE the first boot makes the self-patch land in place, so the
+# first run reaches the login screen.
+fix_application_registry(){
+    local reg
+    for reg in "$WINEPREFIX"/drive_c/users/*/AppData/LocalLow/"Daybreak Game Company"/ApplicationRegistry.xml; do
+        [ -f "$reg" ] || continue
+        /usr/bin/python3 - "$reg" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, "r").read()
+s = s.replace('Path="C:"', 'Path="C:\\users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends"')
+open(p, "w").write(s)
+PY
+    done
+}
+post_install_fixup(){
+    [ -f "$BOOT_LP" ] || return 0
+    [ -f "$GAME_LP" ] && return 0
+    mkdir -p "$GAME_DIR"
+    mv -f "$BOOT_LP" "$GAME_LP" 2>/dev/null || cp -f "$BOOT_LP" "$GAME_LP"
+    mv -f "$WINEPREFIX/drive_c/LaunchPad.ini" "$WINEPREFIX/drive_c/LaunchPad.ico" "$GAME_DIR/" 2>/dev/null
+    fix_application_registry
+    echo "pre-fixed LaunchPad location + ApplicationRegistry path" >> "$LOG"
+}
+
+# ---- self-heal the installer path-resolution bug (creates literal 'C:' folder)
+heal_misplaced_installer(){
+    if [ -d "$MISPLACED_DIR" ]; then
+        echo "fixing misplaced installer files..." >> "$LOG"
+        mkdir -p "$GAME_DIR"
+        cp -Rf "$MISPLACED_DIR/"* "$GAME_DIR/" 2>/dev/null || true
+        rm -rf "$MISPLACED_DIR"
+        if [ -d "$WINEPREFIX/drive_c/LaunchPad.libs" ]; then
+            mkdir -p "$GAME_DIR/LaunchPad.libs"
+            cp -Rf "$WINEPREFIX/drive_c/LaunchPad.libs/"* "$GAME_DIR/LaunchPad.libs/" 2>/dev/null || true
+            rm -rf "$WINEPREFIX/drive_c/LaunchPad.libs"
+        fi
+        [ -f "$BOOT_LP" ] && [ ! -f "$GAME_LP" ] && cp -f "$BOOT_LP" "$GAME_LP" 2>/dev/null
+        fix_application_registry
     fi
 }
 
@@ -163,48 +243,168 @@ open(p, "wb").write(s.encode("latin-1"))
 PY
 }
 
-# ---- self-heal the installer path-resolution bug (creates literal 'C:' folder)
-heal_misplaced_installer(){
-    local misplaced="$WINEPREFIX/drive_c/users/Public/Daybreak Game Company/Installed Games/C:"
-    if [ -d "$misplaced" ]; then
-        echo "fixing misplaced installer files..." >> "$LOG"
-        mkdir -p "$GAME_DIR"
-        cp -Rf "$misplaced/"* "$GAME_DIR/" 2>/dev/null || true
-        rm -rf "$misplaced"
-        if [ -f "$BOOT_LP" ]; then
-            cp -f "$BOOT_LP" "$GAME_LP" 2>/dev/null || true
-        fi
-        if [ -d "$WINEPREFIX/drive_c/LaunchPad.libs" ]; then
-            cp -Rf "$WINEPREFIX/drive_c/LaunchPad.libs/"* "$GAME_DIR/LaunchPad.libs/" 2>/dev/null || true
-            rm -rf "$WINEPREFIX/drive_c/LaunchPad.libs"
-        fi
-        local reg
-        for reg in "$WINEPREFIX"/drive_c/users/*/AppData/LocalLow/Daybreak Game Company/ApplicationRegistry.xml; do
-            if [ -f "$reg" ]; then
-                /usr/bin/python3 - "$reg" <<'PY'
-import sys
-p = sys.argv[1]
-s = open(p, "r").read()
-s = s.replace('Path="C:"', 'Path="C:\\users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends"')
-open(p, "w").write(s)
-PY
+# ---- install supervisor: tail LaunchPad's logs into the setup window --------
+# Log vocabulary (verified against captured first-install logs, 2026-07-12;
+# reference: docs/LAUNCHPAD-LOGS.md):
+#   GameLauncher.log        TransitionState … newState=SelfPatch|…|DisplayingMainScreen
+#   SelfPatchProgress.log   downloaded=N, totalToDownload=N       (launcher update)
+#   PatcherProgress.log     OnDownloadProgress - progress=N%, downloaded=…  (game)
+#                           OnInstallProgress - progress=N%, …
+#   PatcherEvents.log       OnStateChange … newState=ready|readyIdle|launched
+LAST_PHASE=""; READY_SENT=0; DONE_SENT=0; INI_PINNED=0; STAMP="$OSXEQL_HOME/.install-run-stamp"
+phase_once(){ [ "$LAST_PHASE" = "$1" ] || { LAST_PHASE="$1"; progress PHASE "$1"; }; }
+fmt_gb(){ /usr/bin/awk -v b="$1" 'BEGIN{printf "%.1f", b/1073741824}'; }
+fmt_mb(){ /usr/bin/awk -v b="$1" 'BEGIN{printf "%.0f", b/1048576}'; }
+
+parse_launchpad_logs(){
+    local gl="$LP_LOGS/GameLauncher.log" sp="$LP_LOGS/SelfPatchProgress.log"
+    local pp="$LP_LOGS/PatcherProgress.log" pe="$LP_LOGS/PatcherEvents.log"
+    local state sline dl tot pct ev
+
+    # launcher lifecycle
+    if [ -f "$gl" ] && [ "$gl" -nt "$STAMP" ]; then
+        state="$(tail -c 12000 "$gl" 2>/dev/null | grep -o 'newState=[A-Za-z]*' | tail -1 | cut -d= -f2)"
+        case "$state" in
+            SelfPatch)
+                phase_once "Launcher updating itself"
+                sline="$(tail -c 3000 "$sp" 2>/dev/null | grep -oE 'downloaded=[0-9]+, totalToDownload=[0-9]+' | tail -1)"
+                if [ -n "$sline" ]; then
+                    dl="${sline#downloaded=}"; dl="${dl%%,*}"
+                    tot="${sline##*totalToDownload=}"
+                    if [ "${tot:-0}" -gt 0 ] 2>/dev/null; then
+                        progress PROGRESS $(( dl * 100 / tot ))
+                        progress DETAIL "$(fmt_mb "$dl") of $(fmt_mb "$tot") MB"
+                    fi
+                fi
+                ;;
+            InitializingEngine|LoadingMainScreen)
+                phase_once "Starting the launcher"
+                progress INDET
+                ;;
+            DisplayingMainScreen)
+                if [ "$READY_SENT" = 0 ]; then
+                    READY_SENT=1
+                    progress READY "LaunchPad is ready — log in there"
+                    progress DETAIL "You can close this window; it keeps tracking the install if you leave it open."
+                    progress INDET
+                    osa -e 'display notification "Log in in the LaunchPad window." with title "osxEQL" sound name "Glass"' &
+                fi
+                ;;
+        esac
+    fi
+
+    # game download / install (starts after the user logs in and picks install)
+    if [ -f "$pp" ] && [ "$pp" -nt "$STAMP" ]; then
+        sline="$(tail -c 6000 "$pp" 2>/dev/null | grep -oE 'OnDownloadProgress - progress=[0-9]+%, downloaded=[0-9]+, totalToDownload=[0-9]+' | tail -1)"
+        if [ -n "$sline" ]; then
+            pct="$(printf '%s' "$sline" | grep -oE 'progress=[0-9]+' | head -1 | cut -d= -f2)"
+            dl="$(printf '%s' "$sline" | grep -oE 'downloaded=[0-9]+' | cut -d= -f2)"
+            tot="$(printf '%s' "$sline" | grep -oE 'totalToDownload=[0-9]+' | cut -d= -f2)"
+            if [ "${pct:-100}" -lt 100 ] 2>/dev/null; then
+                phase_once "Downloading EverQuest Legends"
+                progress PROGRESS "$pct"
+                progress DETAIL "$(fmt_gb "$dl") of $(fmt_gb "$tot") GB"
+            else
+                sline="$(tail -c 6000 "$pp" 2>/dev/null | grep -oE 'OnInstallProgress - progress=[0-9]+' | tail -1)"
+                pct="${sline##*=}"
+                if [ -n "$pct" ] && [ "$pct" -lt 100 ] 2>/dev/null; then
+                    phase_once "Installing game files"
+                    progress PROGRESS "$pct"
+                    progress DETAIL ""
+                fi
             fi
-        done
+        fi
+    fi
+
+    # terminal states
+    if [ -f "$pe" ] && [ "$pe" -nt "$STAMP" ]; then
+        ev="$(tail -c 4000 "$pe" 2>/dev/null | grep -o 'newState=[A-Za-z]*' | tail -1 | cut -d= -f2)"
+        case "$ev" in
+            ready|readyIdle)
+                if [ "$INI_PINNED" = 0 ] && [ -f "$GAME_DIR/eqclient.ini" ]; then
+                    fix_eqclient; INI_PINNED=1
+                fi
+                if [ "$DONE_SENT" = 0 ] && [ -f "$GAME_DIR/eqgame.exe" ]; then
+                    DONE_SENT=1
+                    progress DONE "EverQuest Legends is installed — press PLAY in LaunchPad"
+                fi
+                ;;
+            launched)
+                [ "$INI_PINNED" = 0 ] && [ -f "$GAME_DIR/eqclient.ini" ] && { fix_eqclient; INI_PINNED=1; }
+                if [ "$DONE_SENT" = 0 ]; then
+                    DONE_SENT=1
+                    progress DONE "EverQuest Legends is installed and running"
+                fi
+                ;;
+        esac
     fi
 }
-heal_misplaced_installer
 
-# ---- decide what to launch ------------------------------------------------
-if [ -f "$GAME_LP" ]; then
-    fix_eqclient
-    LP_WINPATH="$GAME_WINDIR\\LaunchPad.exe"
-elif [ -f "$BOOT_LP" ]; then
-    LP_WINPATH="$BOOT_WINPATH"
-else
-    run_installer
-    LP_WINPATH="$BOOT_WINPATH"
+install_flow(){
+    start_progress_window
+    progress PHASE "Setting up the Wine environment"
+    progress INDET
+    ensure_prefix
+    heal_misplaced_installer          # leftovers from an older interrupted install
+    if [ ! -f "$GAME_LP" ] && [ ! -f "$BOOT_LP" ]; then
+        progress PHASE "Waiting for EQLegends_setup.exe"
+        progress DETAIL "Pick the installer in the dialog — download it from everquest.com if needed."
+        run_installer
+        progress DETAIL ""
+    fi
+    post_install_fixup
+
+    : > "$LOG"
+    touch "$STAMP"
+    local attempt=1 max=3 lp_winpath wine_pid
+    while :; do
+        if [ -f "$GAME_LP" ]; then lp_winpath="$GAME_WINDIR\\LaunchPad.exe"; else lp_winpath="$BOOT_WINPATH"; fi
+        phase_once "Starting the launcher"
+        progress INDET
+        mkdir -p "$GAME_DIR"
+        cd "$GAME_DIR" 2>/dev/null || cd "$WINEPREFIX/drive_c"
+        "$WINE" explorer "/desktop=osxEQL,${OSXEQL_W}x${OSXEQL_H}" "$lp_winpath" >>"$LOG" 2>&1 &
+        wine_pid=$!
+        while kill -0 "$wine_pid" 2>/dev/null; do
+            if [ "$DONE_SENT" = 1 ]; then sleep 20; else parse_launchpad_logs; sleep 2; fi
+        done
+        wait "$wine_pid" 2>/dev/null
+
+        # died before the login screen with the misplaced-C: signature → heal, retry
+        if [ -d "$MISPLACED_DIR" ] && [ "$READY_SENT" = 0 ] && [ "$attempt" -lt "$max" ]; then
+            attempt=$((attempt+1))
+            LAST_PHASE=""
+            progress PHASE "Repairing the launcher install"
+            progress INDET
+            heal_misplaced_installer
+            continue
+        fi
+        break
+    done
+    rm -f "$STAMP"
+
+    if [ "$DONE_SENT" = 1 ] || [ "$READY_SENT" = 1 ]; then
+        progress QUIT
+    else
+        progress FAIL "The launcher stopped before finishing"
+        progress DETAIL "Log: ~/Library/Application Support/osxEQL/logs/app-launch.log"
+    fi
+}
+
+# ---- go ---------------------------------------------------------------------
+if [ ! -f "$GAME_DIR/eqgame.exe" ]; then
+    install_flow
+    exit 0
 fi
 
+# PLAY mode — game is installed; straight to LaunchPad (no window)
+heal_misplaced_installer
+fix_eqclient
+if [ -f "$GAME_LP" ]; then
+    LP_WINPATH="$GAME_WINDIR\\LaunchPad.exe"
+else
+    LP_WINPATH="$BOOT_WINPATH"
+fi
 cd "$GAME_DIR" 2>/dev/null || cd "$WINEPREFIX/drive_c"
 # LaunchPad in a wine virtual desktop (avoids its splash-window deadlock).
 exec "$WINE" explorer "/desktop=osxEQL,${OSXEQL_W}x${OSXEQL_H}" "$LP_WINPATH" >"$LOG" 2>&1

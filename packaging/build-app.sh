@@ -21,6 +21,7 @@ OUT="$REPO/dist/osxEQL.app"
 nm -gU "$WINE_SRC/lib/wine/x86_64-unix/winemac.so" 2>/dev/null | grep -q macdrv_functions \
     || { echo "FATAL: $WINE_SRC winemac.so does not export macdrv_functions — DXMT cannot create a Metal view (gotcha #1)"; exit 1; }
 [ -f "$REPO/assets/icon/AppIcon.icns" ]                      || { echo "missing assets/icon/AppIcon.icns — run assets/icon/generate.py + build_icns.sh"; exit 1; }
+xcrun -f swiftc >/dev/null 2>&1                              || { echo "swiftc not found — install Xcode Command Line Tools"; exit 1; }
 
 # --- assemble --------------------------------------------------------------
 echo "assembling $OUT"
@@ -29,6 +30,8 @@ mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
 install -m 0755 "$REPO/app/launcher.sh" "$OUT/Contents/MacOS/osxEQL"
 cp "$REPO/app/Info.plist"        "$OUT/Contents/Info.plist"
 cp "$REPO/assets/icon/AppIcon.icns" "$OUT/Contents/Resources/AppIcon.icns"
+echo "compiling setup-window helper…"
+xcrun swiftc -O -o "$OUT/Contents/Resources/osxeql-progress" "$REPO/app/progress-helper.swift" -framework AppKit
 echo "copying Wine runtime ($(du -sh "$WINE_SRC" | cut -f1)) — a moment…"
 ditto "$WINE_SRC" "$OUT/Contents/Resources/Wine"
 
