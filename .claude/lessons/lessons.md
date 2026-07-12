@@ -121,3 +121,26 @@ Read this at session start. Receipts (full write-ups) live in `docs/JOURNEY.md`.
   confirm `pgrep -f LaunchPad.exe` is alive after a few seconds and `app-launch.log` has zero
   `could not load ntdll.so`. The GUI login + Play needs Kyle's display/credentials — that
   hop is his to run.
+
+## Runtime dylibs: wine dlopens brew libs by bare soname, resolved via LC_RPATH (2026-07-12)
+
+- Our Wine dlopens `libfreetype.6/libgnutls.30/libvulkan.1/libSDL2-2.0.0.dylib` by BARE
+  soname (no absolute paths, no otool-visible links — `otool -L` shows nothing). They
+  resolve through the `LC_RPATH` list baked into every wine image:
+  `@loader_path/` → `@loader_path/../../` (= `Wine/lib`) → `/usr/local/lib`. That order
+  means dylibs placed in `Wine/lib` WIN over Intel-brew copies — the basis of
+  `packaging/bundle-dylibs.sh` (v0.2.1+): without it the DMG only worked on Macs that
+  happened to have x86_64 Homebrew (CosmicMunkey's 2026-07 crash report).
+- dyld's DEFAULT fallback path does NOT include /usr/local/lib on macOS 26 (tested with a
+  clean dlopen harness) — so `DYLD_FALLBACK_LIBRARY_PATH` changes are low-risk here; rpath
+  does the real work. The launcher's export of it is belt-and-braces for the bundled libs.
+- `otool -L` closure walking is NOT enough: brew's `sdl2` is `sdl2-compat`, which dlopens
+  `libSDL3.dylib` AT RUNTIME (tries `@loader_path/libSDL3.dylib` among others). The bundler
+  therefore recurses a strings-scan over everything it bundles. If a future lib fails only
+  on no-brew machines, suspect another runtime dlopen — `DYLD_PRINT_LIBRARIES=1` on a
+  throwaway prefix wineboot shows every load origin.
+- Remaining known /usr/local touch: Vulkan loader finds MoltenVK via brew's ICD JSON
+  (`/usr/local/share/vulkan/icd.d/`). Harmless for EQL — DXMT renders via Metal, not
+  Vulkan; on a clean Mac winevulkan just reports no devices. `libMoltenVK.dylib` IS
+  bundled if the dxvk fallback backend ever needs it (point `VK_DRIVER_FILES` at a
+  relative ICD json).

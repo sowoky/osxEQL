@@ -32,6 +32,10 @@ cp "$REPO/assets/icon/AppIcon.icns" "$OUT/Contents/Resources/AppIcon.icns"
 echo "copying Wine runtime ($(du -sh "$WINE_SRC" | cut -f1)) — a moment…"
 ditto "$WINE_SRC" "$OUT/Contents/Resources/Wine"
 
+# --- bundle the Homebrew dylibs wine dlopens (freetype/gnutls/…) so the app
+# --- works on Macs without Intel Homebrew (see packaging/bundle-dylibs.sh)
+"$HERE/bundle-dylibs.sh" "$OUT/Contents/Resources/Wine"
+
 # --- sign (ad-hoc) + clean -------------------------------------------------
 xattr -cr "$OUT" 2>/dev/null || true
 echo "ad-hoc signing…"

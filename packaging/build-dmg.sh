@@ -19,10 +19,10 @@ cat > "$STAGE/READ ME FIRST.txt" <<'TXT'
 osxEQL — EverQuest Legends on Apple Silicon (open-source Wine + DXMT)
 
 1. Drag osxEQL onto the Applications folder (shown here).
-2. The app is not signed by Apple, so the FIRST time you open it:
-   right-click (Control-click) osxEQL in Applications → Open → Open.
-   (If macOS still blocks it: System Settings → Privacy & Security →
-    scroll down → "Open Anyway".)
+2. The app is not signed by Apple, so macOS will block the first open
+   ("can't be opened"). Clear the quarantine flag once — open Terminal and run:
+       xattr -dr com.apple.quarantine /Applications/osxEQL.app
+   Then open the app normally.
 3. On first launch osxEQL asks for EQLegends_setup.exe — download that from
    the official EverQuest Legends site first (you need a Daybreak account).
    osxEQL installs it, then opens the launcher so you can log in and download
