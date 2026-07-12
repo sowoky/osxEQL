@@ -33,6 +33,7 @@ export WINESERVER="$WINE_DIR/bin/wineserver"
 export WINEDLLPATH="$WINE_DIR/lib/wine/x86_64-windows:$WINE_DIR/lib/wine/i386-windows"
 export WINEDEBUG="-all"
 export WINEDLLOVERRIDES="mscoree,mshtml="
+export DYLD_FALLBACK_LIBRARY_PATH="$WINE_DIR/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
 # NEVER export WINELOADER — it makes wine copy the loader to a temp dir for child
 # processes which then fail "could not load ntdll.so" (project gotcha #2).
 
@@ -151,6 +152,37 @@ for k, v in (("Fullscreen", "0"), ("Width", w), ("Height", h),
 open(p, "wb").write(s.encode("latin-1"))
 PY
 }
+
+# ---- self-heal the installer path-resolution bug (creates literal 'C:' folder)
+heal_misplaced_installer(){
+    local misplaced="$WINEPREFIX/drive_c/users/Public/Daybreak Game Company/Installed Games/C:"
+    if [ -d "$misplaced" ]; then
+        echo "fixing misplaced installer files..." >> "$LOG"
+        mkdir -p "$GAME_DIR"
+        cp -Rf "$misplaced/"* "$GAME_DIR/" 2>/dev/null || true
+        rm -rf "$misplaced"
+        if [ -f "$BOOT_LP" ]; then
+            cp -f "$BOOT_LP" "$GAME_LP" 2>/dev/null || true
+        fi
+        if [ -d "$WINEPREFIX/drive_c/LaunchPad.libs" ]; then
+            cp -Rf "$WINEPREFIX/drive_c/LaunchPad.libs/"* "$GAME_DIR/LaunchPad.libs/" 2>/dev/null || true
+            rm -rf "$WINEPREFIX/drive_c/LaunchPad.libs"
+        fi
+        local reg
+        for reg in "$WINEPREFIX"/drive_c/users/*/AppData/LocalLow/Daybreak Game Company/ApplicationRegistry.xml; do
+            if [ -f "$reg" ]; then
+                /usr/bin/python3 - "$reg" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, "r").read()
+s = s.replace('Path="C:"', 'Path="C:\\users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends"')
+open(p, "w").write(s)
+PY
+            fi
+        done
+    fi
+}
+heal_misplaced_installer
 
 # ---- decide what to launch ------------------------------------------------
 if [ -f "$GAME_LP" ]; then
