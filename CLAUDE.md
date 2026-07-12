@@ -26,16 +26,18 @@ patched Wine do. **That symbol is the crux of this whole project.**
   wine dlopens (`Wine/lib/lib*.dylib`, staged by `packaging/bundle-dylibs.sh`), so the DMG
   runs on Macs with no Intel Homebrew.
 - **The runtime ("bottle"):** `~/Library/Application Support/osxEQL/`
-  - `Wine/` — the Wine runtime. **Self-built CrossOver 26.2.0**, compiled by us from
-    CodeWeavers' official published LGPL source (`crossover-sources-26.2.0.tar.gz`) with
-    system clang — see `engine/build-wine.sh`. Has the `macdrv_functions` bridge natively;
-    ships no D3DMetal/GUI/branding; no CrossOver install needed. Drive it via `Wine/bin/wine`
-    (the real loader) — **do NOT set `WINELOADER`** (breaks child-exec; see gotcha #2).
-    Old extracted-from-CrossOver tree kept at `Wine.extracted-bak/` for rollback.
-  - `prefix/` — **the ACTIVE prefix**: holds the 6.7 GB EQ client (copied out of the
-    CrossOver bottle once). The launcher prefers it whenever `prefix/system.reg` exists.
-  - `prefix-cx/` — legacy back-compat fallback only (its game folder symlinks into
-    `prefix/`); used solely if `prefix/` has no `system.reg`.
+  - Since the 2026-07-12 clean-Mac wipe + fresh-DMG test, kyle-mac looks like a USER
+    machine: **no staged `Wine/` dev runtime, no `prefix-cx/`** — the wine runtime lives
+    ONLY inside `/Applications/osxEQL.app/Contents/Resources/Wine` (build-app.sh falls
+    back to it as WINE_SRC), and Intel Homebrew is gone (reinstall it + rerun
+    `engine/build-wine.sh` if a runtime rebuild is ever needed).
+  - The runtime is our **self-built CrossOver 26.2.0 Wine** — compiled from CodeWeavers'
+    official published LGPL source with system clang (`engine/build-wine.sh`). Has the
+    `macdrv_functions` bridge natively; no CrossOver install needed. Drive it via
+    `Wine/bin/wine` (the real loader) — **do NOT set `WINELOADER`** (gotcha #2).
+  - `prefix/` — **the ACTIVE prefix**: holds the EQ client (installed via the app's own
+    first-run flow). The launcher prefers it whenever `prefix/system.reg` exists;
+    `prefix-cx` is a legacy fallback name only.
 - **The engine:** `engine/` — the `osxeql` CLI + numbered scripts. Works headless; the app
   is a thin shell over it.
 - **Docs:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (deep technical),

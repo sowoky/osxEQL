@@ -48,8 +48,12 @@ final class ProgressUI: NSObject, NSWindowDelegate {
         detail.textColor = .secondaryLabelColor
         detail.lineBreakMode = .byTruncatingTail
 
+        // Always determinate — the indeterminate→determinate mode switch has been
+        // seen not to render the fill. Phases without measurable progress hide
+        // the bar instead (INDET); PROGRESS unhides it.
         bar.minValue = 0; bar.maxValue = 100
-        bar.isIndeterminate = true
+        bar.isIndeterminate = false
+        bar.isHidden = true
         bar.style = .bar
 
         logView.isEditable = false
@@ -91,7 +95,6 @@ final class ProgressUI: NSObject, NSWindowDelegate {
             closeButton.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
             closeButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 80),
         ])
-        bar.startAnimation(nil)
     }
 
     @objc func closePressed() { NSApp.terminate(nil) }
@@ -120,19 +123,17 @@ final class ProgressUI: NSObject, NSWindowDelegate {
             detail.stringValue = arg
         case "PROGRESS":
             if let v = Double(arg) {
-                bar.isIndeterminate = false
+                bar.isHidden = false
                 bar.doubleValue = v
             }
         case "INDET":
-            bar.isIndeterminate = true
-            bar.startAnimation(nil)
+            bar.isHidden = true
         case "LOG":
             appendLog(arg)
         case "READY":
             phase.stringValue = arg
             appendLog(arg)
-            bar.isIndeterminate = true
-            bar.startAnimation(nil)
+            bar.isHidden = true
             NSSound(named: "Glass")?.play()
             NSApp.requestUserAttention(.criticalRequest)
             window.makeKeyAndOrderFront(nil)
@@ -141,15 +142,14 @@ final class ProgressUI: NSObject, NSWindowDelegate {
             phase.stringValue = arg
             appendLog(arg)
             detail.stringValue = "You can close this window."
-            bar.isIndeterminate = false
+            bar.isHidden = false
             bar.doubleValue = 100
             NSSound(named: "Glass")?.play()
         case "FAIL":
             finished = true
             phase.stringValue = arg
             appendLog(arg)
-            bar.isIndeterminate = false
-            bar.doubleValue = 0
+            bar.isHidden = true
         case "QUIT":
             NSApp.terminate(nil)
         default: break
@@ -181,16 +181,22 @@ let ui = ProgressUI()
 
 // --snapshot <dir>: render canned states to PNGs and exit (no window shown)
 if snapshotMode {
+    // Canned strings mirror what app/launcher.sh actually sends — keep in sync,
+    // so the snapshots verify the UI users really see.
     let dir = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
-    for cmd in ["PHASE Downloading EverQuest Legends", "DETAIL 3.2 of 6.0 GB",
-                "PROGRESS 54", "LOG Installing Daybreak's launcher",
-                "LOG Launcher updating itself", "LOG Downloading EverQuest Legends"] {
+    for cmd in ["PHASE Setting up the Wine environment", "INDET",
+                "LOG Installing Daybreak's launcher",
+                "LOG Launcher updating itself",
+                "PHASE Downloading EverQuest Legends", "DETAIL 3.2 of 6.0 GB",
+                "PROGRESS 54"] {
         ui.handle(cmd)
     }
     ui.snapshot(to: dir.appendingPathComponent("progress-mid.png"))
-    ui.handle("READY Log in in the LaunchPad window")
-    ui.handle("DETAIL You can close this window.")
+    ui.handle("READY LaunchPad is ready — log in there")
+    ui.handle("DETAIL You can close this window; it keeps tracking the install if you leave it open.")
     ui.snapshot(to: dir.appendingPathComponent("progress-ready.png"))
+    ui.handle("DONE EverQuest Legends is installed — press PLAY in LaunchPad")
+    ui.snapshot(to: dir.appendingPathComponent("progress-done.png"))
     exit(0)
 }
 

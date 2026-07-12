@@ -12,6 +12,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 WINE_SRC="${1:-$HOME/Library/Application Support/osxEQL/Wine}"
+# Fallback: no staged dev runtime (wiped 2026-07-12) — source the runtime from
+# the installed app; it already carries DXMT + the bundled dylibs + ICD json.
+[ -x "$WINE_SRC/bin/wine" ] || WINE_SRC="/Applications/osxEQL.app/Contents/Resources/Wine"
 OUT="$REPO/dist/osxEQL.app"
 
 # --- preflight -------------------------------------------------------------
