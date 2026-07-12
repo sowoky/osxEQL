@@ -71,6 +71,25 @@ packaging/build-app.sh        # -> dist/osxEQL.app  (embeds the runtime)
 packaging/build-dmg.sh        # -> dist/osxEQL-<ver>.dmg
 ```
 
+### Prerequisites
+
+- **x86_64 Homebrew** (`/usr/local/bin/brew`). 
+  > [!IMPORTANT]
+  > Wine is an x86_64 application and **requires** x86_64 libraries. The standard ARM64 Homebrew (`/opt/homebrew/bin/brew`) will install incompatible libraries that will cause Wine to instantly crash.
+  > 
+  > To install the x86_64 version of Homebrew on an Apple Silicon Mac, run:
+  > ```bash
+  > arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  > ```
+
+- **Required Homebrew formulas** (must be installed via `arch -x86_64 /usr/local/bin/brew install <formula>`):
+  - `bison` `mingw-w64` `pkgconfig` `coreutils` `freetype` `gnutls` `molten-vk` `sdl2` `vulkan-loader` `vulkan-headers` `libpcap`
+
+- **Required System Libraries** (provided by the formulas above):
+  - `/usr/local/lib/libfreetype.6.dylib`
+  - `/usr/local/lib/libpng16.16.dylib`
+  - `/usr/local/lib/libvulkan.1.dylib`
+
 The `engine/osxeql` CLI (`setup`/`install`/`import-client`/`play`/`backend`/`status`/
 `doctor`) is the headless equivalent of the app and is handy for development.
 
