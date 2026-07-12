@@ -61,11 +61,11 @@ osxEQL/
 ├── Wine/                     # the Wine runtime (bin/, lib/wine/{x86_64,i386}-{windows,unix})
 │                             # currently a COPY of CrossOver's LGPL Wine build (has macdrv_functions)
 │                             # + DXMT v0.80 installed into its lib/wine tree
-├── prefix/                   # a wineprefix that physically holds the 6.7 GB EQ client
+├── prefix/                   # THE ACTIVE PREFIX — a win64 wineprefix that physically holds the
+│                             #   6.7 GB EQ client; system32/winemetal.dll present; Fullscreen=0
 │                             #   drive_c/users/Public/Daybreak Game Company/Installed Games/EverQuest Legends/
-├── prefix-cx/                # THE ACTIVE PREFIX (created by CrossOver's wineloader)
-│                             #   its EQ folder is a SYMLINK into prefix/ (so the 6.7 GB isn't duplicated)
-│                             #   system32/winemetal.dll present; Fullscreen=0 windowed config
+├── prefix-cx/                # legacy back-compat fallback ONLY (older extracted-from-CrossOver
+│                             #   installs). launcher.sh uses it only if prefix/ has no system.reg.
 ├── backends/dxmt-v0.80/      # extracted DXMT release (the open-source backend DLLs + winemetal.so)
 ├── cache/                    # downloaded Wine/DXMT tarballs
 ├── build/                    # vanilla-Wine build workspace (engine/build-wine.sh)
@@ -79,15 +79,20 @@ CrossOver.app installed or the original bottles — verified the Wine runs stand
 
 ## 4. The launch flow
 
-The app (`~/Desktop/osxEQL.app/Contents/MacOS/osxEQL`) does:
+The app (`/Applications/osxEQL.app/Contents/MacOS/osxEQL`) does, in essence:
 
 ```bash
-export WINEPREFIX=~/Library/Application Support/osxEQL/prefix-cx
-export WINELOADER=$WINE_DIR/bin/wineloader
+WINE=$WINE_DIR/bin/wine                 # bin/wine is the real Mach-O loader — drive it directly
+export WINEPREFIX="$HOME/Library/Application Support/osxEQL/prefix"
 export WINESERVER=$WINE_DIR/bin/wineserver
 export WINEDLLPATH=$WINE_DIR/lib/wine/x86_64-windows:$WINE_DIR/lib/wine/i386-windows
+export WINEDEBUG=-all
+export WINEDLLOVERRIDES='mscoree,mshtml='
+# Do NOT export WINELOADER: with a from-source bin/wine it makes wine copy the loader
+# to a temp dir for child processes (explorer→LaunchPad→eqgame), which then fail
+# 'could not load ntdll.so'. See gotcha #2 in CLAUDE.md / STATUS.md.
 caffeinate -dimsu -w $$ &
-exec "$WINELOADER" explorer /desktop=osxEQL,1280x960 'C:\...\LaunchPad.exe'
+exec "$WINE" explorer /desktop=osxEQL,1280x960 'C:\...\LaunchPad.exe'
 ```
 
 - `explorer /desktop=NAME,WxH` runs everything inside a Wine **virtual desktop** — this
