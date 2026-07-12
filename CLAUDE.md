@@ -19,8 +19,10 @@ Metal view to the Wine window. Stock Wine doesn't export it; CrossOver's build a
 patched Wine do. **That symbol is the crux of this whole project.**
 
 ## Where everything lives
-- **The app:** `~/Desktop/osxEQL.app` — double-click → Daybreak LaunchPad → log in → Play →
-  game renders via DXMT.
+- **The app:** `/Applications/osxEQL.app` — double-click → Daybreak LaunchPad → log in →
+  Play → game renders via DXMT. Since v0.2.1 the bundle also carries the Homebrew dylibs
+  wine dlopens (`Wine/lib/lib*.dylib`, staged by `packaging/bundle-dylibs.sh`), so the DMG
+  runs on Macs with no Intel Homebrew.
 - **The runtime ("bottle"):** `~/Library/Application Support/osxEQL/`
   - `Wine/` — the Wine runtime. **Self-built CrossOver 26.2.0**, compiled by us from
     CodeWeavers' official published LGPL source (`crossover-sources-26.2.0.tar.gz`) with
@@ -28,8 +30,10 @@ patched Wine do. **That symbol is the crux of this whole project.**
     ships no D3DMetal/GUI/branding; no CrossOver install needed. Drive it via `Wine/bin/wine`
     (the real loader) — **do NOT set `WINELOADER`** (breaks child-exec; see gotcha #2).
     Old extracted-from-CrossOver tree kept at `Wine.extracted-bak/` for rollback.
-  - `prefix/` — holds the 6.7 GB EQ client (copied out of the CrossOver bottle once).
-  - `prefix-cx/` — **the ACTIVE prefix** the app uses; its game folder symlinks into `prefix/`.
+  - `prefix/` — **the ACTIVE prefix**: holds the 6.7 GB EQ client (copied out of the
+    CrossOver bottle once). The launcher prefers it whenever `prefix/system.reg` exists.
+  - `prefix-cx/` — legacy back-compat fallback only (its game folder symlinks into
+    `prefix/`); used solely if `prefix/` has no `system.reg`.
 - **The engine:** `engine/` — the `osxeql` CLI + numbered scripts. Works headless; the app
   is a thin shell over it.
 - **Docs:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (deep technical),
@@ -102,5 +106,6 @@ the graphics pipeline, not the account. For the real login flow, Kyle runs the a
 
 ## Operating the engine
 `engine/osxeql {setup|install|import-client <dir>|play|backend <dxmt|wined3d>|status|doctor}`.
-`engine/build-wine.sh` compiles the vanilla Wine. The app on the Desktop calls the same
-launch path as `osxeql play` but targets `prefix-cx` + LaunchPad.exe.
+`engine/build-wine.sh` compiles the Wine runtime. The app in /Applications calls the same
+launch path as `osxeql play` but targets LaunchPad.exe (prefix selection: `prefix/` first,
+`prefix-cx/` fallback).

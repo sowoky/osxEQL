@@ -59,7 +59,8 @@ Everything lives under `~/Library/Application Support/osxEQL/`:
 ```
 osxEQL/
 ├── Wine/                     # the Wine runtime (bin/, lib/wine/{x86_64,i386}-{windows,unix})
-│                             # currently a COPY of CrossOver's LGPL Wine build (has macdrv_functions)
+│                             # SELF-BUILT from CodeWeavers' published LGPL CrossOver 26.2.0
+│                             # source (engine/build-wine.sh; has macdrv_functions natively)
 │                             # + DXMT v0.80 installed into its lib/wine tree
 ├── prefix/                   # THE ACTIVE PREFIX — a win64 wineprefix that physically holds the
 │                             #   6.7 GB EQ client; system32/winemetal.dll present; Fullscreen=0
@@ -73,9 +74,10 @@ osxEQL/
 ```
 
 This is **self-contained**: its own Wine copy + its own client copy. It does NOT need
-CrossOver.app installed or the original bottles — verified the Wine runs standalone via
-`wineloader` (CrossOver's `bin/wine` Perl wrapper refuses to run without a CrossOver
-"bottle"; we bypass it).
+CrossOver.app installed or the original bottles. In this from-source build `bin/wine`
+IS the real Mach-O loader and is driven directly (the old *extracted-from-CrossOver*
+runtime had a Perl-wrapper `bin/wine` that refused to run without a CrossOver "bottle";
+that tree is kept only as `Wine.extracted-bak/` for rollback).
 
 ## 4. The launch flow
 
@@ -127,8 +129,10 @@ but is never shipped.)
 | The app, engine, prefix, launch path, DXMT integration, config | **Ours / open source** |
 | DXMT backend | Open source (3Shain) |
 | EQ client | Daybreak's, the user's own account install |
-| **Wine binaries** | **Currently CrossOver's LGPL build** — being replaced by a vanilla build (`engine/build-wine.sh` compiles `3Shain/wine` = upstream Wine 11.2 + the macdrv_functions patch, x86_64). After that swap, ZERO CrossOver binaries remain. |
+| **Wine binaries** | **Self-built from CodeWeavers' published LGPL source** (`crossover-sources-26.2.0.tar.gz`, compiled by `engine/build-wine.sh` with system clang). ZERO binaries extracted from a CrossOver install; no CrossOver.app needed. |
 
-CrossOver's Wine is itself LGPL open source (CodeWeavers publishes the source; `3Shain/winecx`
-mirrors it), so it's redistributable — but the goal is our own vanilla build so the project is
-"completely separate from CrossOver." That build is the last open item.
+The build compiles CrossOver's *source* rather than upstream-vanilla Wine deliberately:
+DXMT v0.80's macdrv ABI matches CrossOver's Wine (vanilla 11.x refactored `macdrv_win_data`),
+and only the CrossOver lineage exports `macdrv_functions` (gotcha #1). CodeWeavers publishes
+that source under LGPL, so a from-source build is fully redistributable — see
+[`STATUS.md`](STATUS.md) §"Why CrossOver source".
