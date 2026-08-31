@@ -66,7 +66,7 @@ shell over a proven engine. Backend is **swappable** (DXMT/DXVK/user-supplied D3
 | Piece | Source | License |
 |---|---|---|
 | Wine | open-source build (WineHQ / Gcenx), pinned & downloaded | LGPL |
-| D3D11→Metal | DXMT or DXVK-macOS | MIT/zlib (TBD by research) |
+| D3D11→Metal | DXMT or DXVK-macOS | LGPL-2.1-or-later |
 | MoltenVK (if DXVK) | KhronosGroup | Apache-2.0 |
 | EQL client | Daybreak, installed by the user via LaunchPad | Daybreak EULA (user's own account) |
 | osxEQL app + engine | this repo | open source (ours) |

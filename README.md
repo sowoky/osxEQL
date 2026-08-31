@@ -12,7 +12,7 @@ open-source Wine (compiled from CodeWeavers' published LGPL source) + **DXMT**
 
 ## Requirements
 
-- Apple Silicon Mac (M1 or newer), macOS 13+.
+- Apple Silicon Mac (M1 or newer), macOS 13+. **macOS 26 (Tahoe) is supported as of v0.3.1.**
 - A Daybreak / EverQuest Legends account and the official **`EQLegends_setup.exe`**.
 - ~10 GB free disk (the game client downloads through Daybreak's launcher).
 
@@ -20,14 +20,9 @@ open-source Wine (compiled from CodeWeavers' published LGPL source) + **DXMT**
 
 1. Download **`osxEQL-<version>.dmg`** from the [Releases](../../releases) page.
 2. Open it and drag **osxEQL** into **Applications**.
-3. **First open:** the app isn't signed by Apple, so macOS blocks it ("damaged" /
-   "can't be opened"). Clear the quarantine flag once — open **Terminal** and run:
-
-   ```bash
-   xattr -dr com.apple.quarantine /Applications/osxEQL.app
-   ```
-
-   After that it opens normally, every time.
+3. The first time you open osxEQL, macOS will ask you to confirm since it was
+   downloaded from the internet. Click **Open** — after that it launches
+   normally every time.
 4. Download **`EQLegends_setup.exe`** from the official EverQuest Legends site
    (you need a Daybreak account).
 5. Launch **osxEQL**. A setup window walks the whole install: pick the installer
@@ -37,6 +32,14 @@ open-source Wine (compiled from CodeWeavers' published LGPL source) + **DXMT**
 
 Nothing else to install: no Homebrew, no Xcode, no Wine — the runtime ships inside
 the app.
+
+> **Unsigned builds (ad-hoc, pre-v0.3.1):** If you're running an older or
+> self-built version that isn't signed by a Developer ID, macOS will block it
+> instead of showing the confirmation dialog. Clear the quarantine flag once:
+> ```bash
+> xattr -dr com.apple.quarantine /Applications/osxEQL.app
+> ```
+> On macOS 26+ this may not work — you'll need a Developer ID signed build.
 
 ## How it works
 
@@ -70,6 +73,15 @@ cd assets/icon && uv run python generate.py && \
 # 4. Assemble the self-contained app + DMG.
 packaging/build-app.sh        # -> dist/osxEQL.app  (embeds the runtime)
 packaging/build-dmg.sh        # -> dist/osxEQL-<ver>.dmg
+
+# 5. (Optional) Sign with a Developer ID for Gatekeeper-clean distribution.
+#    Set these env vars — secrets stay local, never in the repo:
+export CODESIGN_IDENTITY="Developer ID Application: ..."
+export NOTARIZE_KEY=~/path/to/AuthKey.p8
+export NOTARIZE_KEY_ID=<key-id>
+export NOTARIZE_ISSUER=<issuer-uuid>
+packaging/build-app.sh        # signs + notarizes instead of ad-hoc
+packaging/build-dmg.sh        # auto-detects signed app, notarizes DMG
 ```
 
 ### Prerequisites (building only — the release DMG needs none of this)
@@ -99,7 +111,7 @@ The `engine/osxeql` CLI (`setup`/`install`/`import-client`/`play`/`backend`/`sta
 app/            launcher.sh (the app entry point + first-run wizard) + Info.plist
 assets/icon/    icon source (generate.py / icon.svg) + AppIcon.icns + build_icns.sh
 engine/         headless CLI + numbered setup scripts + build-wine.sh
-packaging/      build-app.sh, build-dmg.sh
+packaging/      build-app.sh, build-dmg.sh, sign-and-notarize.sh, entitlements.plist
 docs/           ARCHITECTURE / STATUS / JOURNEY / VISION
 ```
 
@@ -113,3 +125,5 @@ game client is the user's own.
 - Wine (LGPL-2.1) and DXMT (LGPL-2.1+) — see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
   for license texts and how to obtain/rebuild the corresponding source.
 - EverQuest Legends © Daybreak Game Company / Game Jawn. Not included, not affiliated.
+- Signed by Skybound Solutions, LLC. Code signing contributed by
+  [@skybound-raz](https://github.com/skybound-raz).
