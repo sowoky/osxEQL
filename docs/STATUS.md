@@ -109,11 +109,31 @@ Then `osxeql backend dxmt` (or 03-install-backend.sh) drops DXMT's builtin DLLs 
 - **Engine fixed:** `01-stage-runtime.sh` no longer downloads prebuilt Gcenx Wine
   (it lacks `macdrv_functions`); the runtime comes from `build-wine.sh` or the bundle.
 
-## Remaining (optional polish)
-- **Notarization.** The DMG/app is ad-hoc signed (unsigned) → first-open needs
-  `xattr -dr com.apple.quarantine /Applications/osxEQL.app` (right-click→Open no
-  longer bypasses Gatekeeper for unsigned apps on current macOS). A $99/yr Apple
-  Developer ID + notarize step would remove this. Deferred by choice — no dev account.
+## Signing & notarization — DONE (2026-08, @skybound-raz)
+macOS 26 (Tahoe) introduced SIP-protected `com.apple.provenance` tracking on
+files extracted from DMGs. The old `xattr -dr com.apple.quarantine` workaround
+no longer clears it, and Apple removed right-click→Open for unsigned apps. Every
+macOS 26 user was locked out (issue #4).
+
+Fix: Developer ID signing + Apple notarization. Wine under hardened runtime
+needs 4 entitlements (`allow-jit`, `allow-unsigned-executable-memory`,
+`disable-library-validation`, `allow-dyld-environment-variables`) — without
+them Wine crashes with `noexec filesystem` errors when mapping PE binaries.
+Same entitlements CrossOver uses.
+
+The signing process required 4 notarization rounds to get right:
+1. ❌ ~350 unsigned inner Wine binaries (each .so/.dylib needs an individual signature)
+2. ❌ Missed binaries + missing hardened runtime flag on executables
+3. ✅ Notarization passed, but Wine crashed (hardened runtime blocked JIT/mmap)
+4. ✅ Added entitlements — notarization passed AND Wine runs
+
+The pipeline lives in `packaging/sign-and-notarize.sh` + `packaging/entitlements.plist`.
+`build-app.sh` calls it automatically when `CODESIGN_IDENTITY` is set; otherwise
+falls back to ad-hoc signing for local dev. Secrets (identity, API key) are
+environment variables only — never committed.
+
+Signed by Skybound Solutions, LLC (`Developer ID Application: SKYBOUND SOLUTIONS,
+LLC (WC298LM6JQ)`). Code signing contributed by @skybound-raz.
 
 ## Runtime copies & rebuild
 The 2026-07-12 clean-Mac test wiped every staged runtime on kyle-mac (including

@@ -42,10 +42,17 @@ ditto "$WINE_SRC" "$OUT/Contents/Resources/Wine"
 # --- works on Macs without Intel Homebrew (see packaging/bundle-dylibs.sh)
 "$HERE/bundle-dylibs.sh" "$OUT/Contents/Resources/Wine"
 
-# --- sign (ad-hoc) + clean -------------------------------------------------
+# --- sign + clean -------------------------------------------------------------
 xattr -cr "$OUT" 2>/dev/null || true
-echo "ad-hoc signing…"
-codesign --force --deep --sign - "$OUT" 2>&1 | tail -2 || { echo "codesign failed"; exit 1; }
-codesign --verify --deep "$OUT" && echo "signature OK"
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+    echo "Developer ID signing (identity: $CODESIGN_IDENTITY)…"
+    NOTARIZE_FLAG=""
+    [ -n "${NOTARIZE_KEY:-}" ] && NOTARIZE_FLAG="--notarize"
+    "$HERE/sign-and-notarize.sh" $NOTARIZE_FLAG "$OUT"
+else
+    echo "ad-hoc signing (set CODESIGN_IDENTITY for Developer ID)…"
+    codesign --force --deep --sign - "$OUT" 2>&1 | tail -2 || { echo "codesign failed"; exit 1; }
+    codesign --verify --deep "$OUT" && echo "signature OK"
+fi
 
 echo "built: $OUT  ($(du -sh "$OUT" | cut -f1))"

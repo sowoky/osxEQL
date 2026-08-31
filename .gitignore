@@ -16,3 +16,10 @@ __pycache__/
 
 # Logs / scratch
 *.log
+
+# Signing secrets — NEVER commit
+*.p8
+*.p12
+*.pem
+.env
+.env.*
