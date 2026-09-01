@@ -111,7 +111,8 @@ The `engine/osxeql` CLI (`setup`/`install`/`import-client`/`play`/`backend`/`sta
 app/            launcher.sh (the app entry point + first-run wizard) + Info.plist
 assets/icon/    icon source (generate.py / icon.svg) + AppIcon.icns + build_icns.sh
 engine/         headless CLI + numbered setup scripts + build-wine.sh
-packaging/      build-app.sh, build-dmg.sh, sign-and-notarize.sh, entitlements.plist
+packaging/      build-app.sh, build-dmg.sh, sign-and-notarize.sh, entitlements.plist,
+                verify-release.sh (check a signed DMG against this source)
 docs/           ARCHITECTURE / STATUS / JOURNEY / VISION
 ```
 
