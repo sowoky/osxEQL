@@ -18,7 +18,12 @@ DXVK_VERSION="${OSXEQL_DXVK_VERSION:-v1.10.3}"
 
 # ---- Paths ----------------------------------------------------------------
 OSXEQL_HOME="${OSXEQL_HOME:-$HOME/Library/Application Support/osxEQL}"
-WINE_DIR="$OSXEQL_HOME/Wine"            # staged Gcenx wine (contains bin/, lib/)
+WINE_DIR="$OSXEQL_HOME/Wine"            # staged dev runtime (contains bin/, lib/)
+# No staged dev runtime (a user machine) -> drive the runtime shipped inside the app,
+# same fallback packaging/build-app.sh uses. Override with OSXEQL_APP.
+if [ ! -x "$WINE_DIR/bin/wine" ] && [ -x "${OSXEQL_APP:-/Applications/osxEQL.app}/Contents/Resources/Wine/bin/wine" ]; then
+    WINE_DIR="${OSXEQL_APP:-/Applications/osxEQL.app}/Contents/Resources/Wine"
+fi
 export WINEPREFIX="${WINEPREFIX:-$OSXEQL_HOME/prefix}"
 CACHE="$OSXEQL_HOME/cache"
 BACKENDS="$OSXEQL_HOME/backends"        # extracted dxmt/dxvk payloads
@@ -62,8 +67,14 @@ clean_stale_winetemp() {
 
 # Set up the wine runtime environment for a command.
 wine_env() {
-    export WINEPREFIX
+    export WINEPREFIX WINESERVER
     export PATH="$WINE_DIR/bin:$PATH"
+    export WINEDLLPATH="$WINE_DIR/lib/wine/x86_64-windows:$WINE_DIR/lib/wine/i386-windows"
+    # bundled dylibs + MoltenVK ICD (mirrors app/launcher.sh; no-ops on a dev tree)
+    export DYLD_FALLBACK_LIBRARY_PATH="$WINE_DIR/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
+    if [ -f "$WINE_DIR/lib/MoltenVK_icd.json" ]; then
+        export VK_DRIVER_FILES="$WINE_DIR/lib/MoltenVK_icd.json" VK_ICD_FILENAMES="$WINE_DIR/lib/MoltenVK_icd.json"
+    fi
     export WINEDEBUG="${WINEDEBUG:--all}"
     # mscoree/mshtml disabled = no mono/gecko install nag
     export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"

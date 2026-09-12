@@ -9,7 +9,8 @@ osxEQL — run EverQuest Legends on Apple Silicon with open-source parts only.
 
   osxeql setup                 Stage Wine + DXMT and create the prefix
   osxeql install [setup.exe]   Run the Daybreak installer (downloads the client)
-  osxeql import-client <dir>   Copy an existing EQL install into the prefix (testing)
+  osxeql import-client <dir>   Copy an existing EQL install (e.g. a CrossOver bottle's
+                               game dir) into the prefix — no installer, no re-download
   osxeql play                  Launch the game
   osxeql backend <dxmt|wined3d>  Switch the D3D11->Metal backend
   osxeql res [auto|max|WxH]    Game window size used by the .app (no arg: show).
@@ -34,13 +35,55 @@ cmd_import_client() {
     local src="$1"
     [ -d "$src" ] || die "source dir not found: $src"
     [ -f "$src/eqgame.exe" ] || die "no eqgame.exe in $src — not an EQL install dir"
-    have_prefix || die "no prefix — run: osxeql setup"
+    have_wine || die "no Wine runtime (install osxEQL.app, or engine/build-wine.sh)"
+    if ! have_prefix; then
+        bash "$HERE/02-create-prefix.sh" || exit 1
+        # DXMT's per-prefix dll (gotcha #3, 3rd placement) — from the wine tree, so this
+        # works with the app's bundled runtime too (no staged $BACKENDS payload needed).
+        cp -n "$WINE_DIR/lib/wine/x86_64-windows/winemetal.dll" "$WINEPREFIX/drive_c/windows/system32/" 2>/dev/null
+    fi
+    [ -f "$OSXEQL_HOME/backend.active" ] || { [ -f "$WINE_DIR/lib/wine/x86_64-unix/winemetal.so" ] && echo "dxmt (baked into $WINE_DIR)" > "$OSXEQL_HOME/backend.active"; }
     log "importing client from: $src"
     mkdir -p "$EQ_UNIXDIR"
     # ditto is macOS-native and robust (macOS 26 ships openrsync, which lacks
-    # rsync's --info flags). Copies src's contents into the dest dir.
+    # rsync's --info flags). Copies src's contents into the dest dir. On APFS this
+    # is a clone: a 7 GB client copies in seconds and costs no extra disk.
     ditto "$src" "$EQ_UNIXDIR" || die "import failed"
     have_eq && log "client imported -> $EQ_UNIXDIR ($(du -sh "$EQ_UNIXDIR" 2>/dev/null | cut -f1))"
+    import_launcher_state "$src"
+    log "done — open osxEQL.app (or: osxeql play). LaunchPad should come up ready to Play."
+}
+
+# LaunchPad keeps its "is the game installed?" state OUTSIDE the game dir, in the
+# user's AppData: ApplicationRegistry.xml (LocalLow) + the patch Digests. Without
+# them the launcher treats the imported client as not installed. If <src> lives
+# inside another wine prefix (a CrossOver bottle), carry that state over too.
+import_launcher_state() {
+    local src="$1" sp="$1" dst_user="" sappdata d
+    while [ "$sp" != "/" ] && [ ! -d "$sp/drive_c" ]; do sp="$(dirname "$sp")"; done
+    [ -d "$sp/drive_c" ] || { warn "source is not inside a wine prefix — launcher state not imported (LaunchPad will re-verify the install)"; return 0; }
+    for d in "$WINEPREFIX"/drive_c/users/*/; do d="${d%/}"; [ "$(basename "$d")" = Public ] || dst_user="$d"; done
+    [ -n "$dst_user" ] || { warn "no user profile in $WINEPREFIX — launcher state not imported"; return 0; }
+    for sappdata in "$sp"/drive_c/users/*/AppData; do
+        for d in LocalLow Local; do
+            [ -d "$sappdata/$d/Daybreak Game Company" ] || continue
+            mkdir -p "$dst_user/AppData/$d"
+            ditto "$sappdata/$d/Daybreak Game Company" "$dst_user/AppData/$d/Daybreak Game Company" \
+                && log "launcher state imported: AppData/$d/Daybreak Game Company"
+        done
+    done
+    # stale session locks from the source install
+    find "$dst_user/AppData/LocalLow/Daybreak Game Company" -name '*.running.*' -delete 2>/dev/null
+    # the Daybreak installer's Path="C:" registration bug (see app/launcher.sh)
+    local reg="$dst_user/AppData/LocalLow/Daybreak Game Company/ApplicationRegistry.xml"
+    [ -f "$reg" ] && /usr/bin/python3 - "$reg" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+s = s.replace('Path="C:"', 'Path="C:\\users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends"')
+open(p, "w").write(s)
+PY
+    return 0
 }
 
 cmd_install() {
