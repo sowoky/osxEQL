@@ -12,7 +12,8 @@ open-source Wine (compiled from CodeWeavers' published LGPL source) + **DXMT**
 
 ## Requirements
 
-- Apple Silicon Mac (M1 or newer), macOS 13+. **macOS 26 (Tahoe) is supported as of v0.3.1.**
+- Apple Silicon Mac (M1 or newer), macOS 13+. **macOS 26 (Tahoe) is supported as of v0.3.1**
+  (also verified on the macOS 27 beta, M2 Max).
 - A Daybreak / EverQuest Legends account and the official **`EQLegends_setup.exe`**.
 - ~10 GB free disk (the game client downloads through Daybreak's launcher).
 
@@ -32,6 +33,22 @@ open-source Wine (compiled from CodeWeavers' published LGPL source) + **DXMT**
 
 Nothing else to install: no Homebrew, no Xcode, no Wine — the runtime ships inside
 the app.
+
+### Already installed it under CrossOver?
+
+You don't need the installer or the 7 GB download again. Point `import-client` at the
+game folder inside your CrossOver bottle and it copies the client **and** LaunchPad's
+"installed" state into osxEQL's prefix (creating the prefix first if needed):
+
+```bash
+git clone https://github.com/sowoky/osxEQL && cd osxEQL
+engine/osxeql import-client \
+  ~/Library/Application\ Support/CrossOver/Bottles/<bottle>/drive_c/users/Public/Daybreak\ Game\ Company/Installed\ Games/EverQuest\ Legends
+```
+
+On APFS the copy is a clone, so it takes seconds and uses no extra disk. Then open
+osxEQL — LaunchPad comes up at the login screen with the game already installed. Once
+you're happy, CrossOver and its bottle can go.
 
 > **Unsigned builds (ad-hoc, pre-v0.3.1):** If you're running an older or
 > self-built version that isn't signed by a Developer ID, macOS will block it
