@@ -12,7 +12,7 @@
 # the bundled copies win everywhere, brew or no brew. launcher.sh's
 # DYLD_FALLBACK_LIBRARY_PATH=<Wine>/lib is the belt-and-braces second path.
 #
-#   packaging/bundle-dylibs.sh <wine-root>   # e.g. dist/osxEQL.app/Contents/Resources/Wine
+#   packaging/bundle-dylibs.sh <wine-root>   # e.g. dist/osxEQL-Buddy.app/Contents/Resources/Wine
 #
 # Vulkan: a MoltenVK_icd.json with a RELATIVE library_path is generated next to
 # the bundled libMoltenVK.dylib, and launcher.sh points VK_DRIVER_FILES /

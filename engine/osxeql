@@ -1,7 +1,8 @@
 #!/bin/bash
 # osxEQL — open-source EverQuest Legends on macOS (Wine + DXMT, no CrossOver).
 # Headless engine CLI. The macOS app is a thin GUI over these same commands.
-HERE="$(cd "$(dirname "$0")" && pwd)"; . "$HERE/lib.sh"
+HERE="$(cd "$(dirname "$0")" && pwd)"; . "$HERE/lib.sh"; . "$HERE/eqbuddy.sh"
+EQBUDDY_FOCUS_SRC="$HERE/tools/eqbuddy-focus.swift"
 
 usage() {
 cat <<EOF
@@ -12,9 +13,38 @@ osxEQL — run EverQuest Legends on Apple Silicon with open-source parts only.
   osxeql import-client <dir>   Copy an existing EQL install into the prefix (testing)
   osxeql play                  Launch the game
   osxeql backend <dxmt|wined3d>  Switch the D3D11->Metal backend
-  osxeql res [auto|max|WxH]    Game window size used by the .app (no arg: show).
-                               auto = fit current main display (default),
-                               max = exact display size, WxH = pin e.g. 3800x1550
+  osxeql res [max|auto|WxH]    Game window size (no arg: show).
+                               max = exact display size (default; in-game
+                               fullscreen works), auto = display minus menu/title
+                               bar (windowed only), WxH = pin e.g. 3800x1550
+  osxeql eqbuddy [install|update|desktop|window|off|autohide|autoclose|autoupdate [on|off]]
+                               EQBuddy Evolved companion (no arg: show).
+                               install = fetch the official installer, verify its
+                               SHA-256, install into the prefix, enable (window).
+                               update = install the latest release now if newer;
+                               autoupdate on|off = do that at every launch (default on)
+                               autoclose on|off = quit EQBuddy 20 s after the game
+                               closes (default on)
+                               window = its own Mac window over the game (see
+                               osxeql overlay for fullscreen), desktop = inside
+                               the game's Wine desktop (experimental), off = never
+                               autohide on|off = hide EQBuddy while the game isn't
+                               the frontmost Mac app (window mode; default on)
+  osxeql overlay [--status|--revert]
+                               Rebuild winemac.so with the float-over-fullscreen
+                               patch so EQBuddy (eqbuddy window) stays above the
+                               FULLSCREEN game. Needs Xcode CLT + brew bison.
+  osxeql audiofix [--status|--revert]
+                               Rebuild winecoreaudio.so so the game's sound follows
+                               the macOS output (headphones die -> speakers at their
+                               volume; new headphones -> them) without a restart.
+  osxeql logs [archive [MB]]   EverQuest's own logs and their sizes; archive = move
+                               those over MB (default: all) to Logs/archive/. Huge
+                               logs make the game and EQBuddy stutter.
+  osxeql winlevels [filter] [--delay N]
+                               List on-screen windows with their macOS window
+                               LEVEL (diagnoses overlay z-order). --delay waits N s
+                               first so you can switch back to the game.
   osxeql status                Show what's installed
   osxeql doctor                Sanity-check the runtime
 
@@ -60,23 +90,103 @@ cmd_status() {
     echo "prefix:  $(have_prefix && echo "$WINEPREFIX" || echo 'none')"
     echo "backend: $(cat "$OSXEQL_HOME/backend.active" 2>/dev/null || echo none)"
     echo "EQL:     $(have_eq && echo "installed ($EQ_UNIXDIR)" || echo 'not installed')"
+    echo "EQBuddy: $(eqbuddy_exe || echo 'not installed')  (mode: $(eqbuddy_mode))"
+    echo "audio:   $(overlay_marker_ok "$WINE_DIR/lib/wine/x86_64-unix/winecoreaudio.so" osxeql-audiofix && echo 'follows the macOS default output' || echo 'stock, pinned to one device (osxeql audiofix)')"
+    echo "overlay: $(overlay_marker_ok "$WINE_DIR/lib/wine/x86_64-unix/winemac.so" && echo 'winemac.so patched (float over fullscreen)' || echo 'stock winemac.so (osxeql overlay to patch)')"
 }
 
 cmd_res() {
     local f="$OSXEQL_HOME/resolution" cur disp
     if [ $# -eq 0 ]; then
-        cur="$(cat "$f" 2>/dev/null || echo auto)"
+        cur="$(cat "$f" 2>/dev/null || echo max)"
         disp="$(osascript -l JavaScript -e 'ObjC.import("CoreGraphics"); const d=$.CGMainDisplayID(); $.CGDisplayPixelsWide(d)+"x"+$.CGDisplayPixelsHigh(d)' 2>/dev/null || echo '?')"
-        echo "setting: $cur   (main display now: $disp; auto = display minus 40x60 chrome)"
+        echo "setting: $cur   (main display now: $disp; max = exactly that, auto = minus 40x60 chrome)"
         return 0
     fi
     case "$1" in
-        auto)          rm -f "$f"; echo "resolution: auto (fit current display at each launch)" ;;
-        max)           echo max > "$f"; echo "resolution: max (exact display size)" ;;
+        max)           rm -f "$f"; echo "resolution: max (exact display size at each launch — the default)" ;;
+        auto)          echo auto > "$f"; echo "resolution: auto (display minus menu/title bar; keep EQ windowed)" ;;
         [0-9]*x[0-9]*) echo "$1" > "$f"; echo "resolution: pinned to $1" ;;
-        *)             die "usage: osxeql res [auto|max|WxH]" ;;
+        *)             die "usage: osxeql res [max|auto|WxH]" ;;
     esac
-    echo "takes effect next launch of the .app (osxeql play keeps its own 1280x960 verification default)"
+    echo "takes effect next launch (the .app and osxeql play; OSXEQL_W/OSXEQL_H env still override)"
+}
+
+cmd_eqbuddy() {
+    local exe setup
+    case "${1:-}" in
+        "")
+            exe="$(eqbuddy_exe)" || exe="not installed"
+            echo "EQBuddy: $exe"
+            echo "mode:    $(eqbuddy_mode)   (desktop|window|off; unset = the app asks once)"
+            echo "autohide: $(eqbuddy_autohide)   (window mode: hidden while the game isn't the frontmost app)"
+            echo "autoclose: $(eqbuddy_autoclose)   (quit EQBuddy 20 s after the game closes)"
+            echo "autoupdate: $(eqbuddy_autoupdate)   (installed: $( [ -f "$EQBUDDY_STAMP" ] && cut -c1-12 "$EQBUDDY_STAMP" || echo unknown)…)"
+            ;;
+        update)
+            have_wine   || die "wine not staged"
+            have_prefix || die "no prefix — run: osxeql setup"
+            wine_env
+            EQBUDDY_FORCE_UPDATE=1 eqbuddy_update /dev/stderr "$(eqbuddy_mode)" ;;
+        helper)
+            case "${2:-}" in
+                on|off) echo "$2" > "$OSXEQL_HOME/eqbuddy-helper"; echo "EQBuddy helper: $2 (off = no autohide, alert sounds or autoclose; takes effect next launch)" ;;
+                "")     echo "EQBuddy helper: $( [ -f "$OSXEQL_HOME/eqbuddy-helper" ] && cat "$OSXEQL_HOME/eqbuddy-helper" || echo on)" ;;
+                *)      die "usage: osxeql eqbuddy helper [on|off]" ;;
+            esac ;;
+        autoclose)
+            case "${2:-}" in
+                on|off) echo "$2" > "$EQBUDDY_AUTOCLOSE_FILE"; echo "EQBuddy autoclose: $2 (takes effect next launch)" ;;
+                "")     echo "EQBuddy autoclose: $(eqbuddy_autoclose)" ;;
+                *)      die "usage: osxeql eqbuddy autoclose [on|off]" ;;
+            esac ;;
+        autoupdate)
+            case "${2:-}" in
+                on|off) echo "$2" > "$EQBUDDY_AUTOUPDATE_FILE"; echo "EQBuddy autoupdate: $2" ;;
+                "")     echo "EQBuddy autoupdate: $(eqbuddy_autoupdate)" ;;
+                *)      die "usage: osxeql eqbuddy autoupdate [on|off]" ;;
+            esac ;;
+        install)
+            have_wine   || die "wine not staged"
+            have_prefix || die "no prefix — run: osxeql setup"
+            wine_env
+            log "downloading EQBuddy Evolved from $EQBUDDY_RELEASE_URL ..."
+            setup="$(eqbuddy_download "$CACHE")" || die "download/verification failed"
+            log "SHA-256 verified; installing into $WINEPREFIX (EQBuddy opens when done)"
+            "$WINE" "$setup" "${EQBUDDY_SETUP_ARGS[@]}" || warn "installer returned non-zero"
+            exe="$(eqbuddy_exe)" || die "installer finished but EQBuddy.exe was not found in the prefix"
+            eqbuddy_mark_installed "$setup"
+            eqbuddy_sync_sounds /dev/stderr
+            [ "$(eqbuddy_mode)" = desktop ] || [ "$(eqbuddy_mode)" = window ] || eqbuddy_set_mode window
+            log "installed: $exe  (mode: $(eqbuddy_mode)) — it will start with the game"
+            ;;
+        desktop|window|off)
+            eqbuddy_set_mode "$1"; echo "EQBuddy mode: $1 (takes effect next launch)" ;;
+        autohide)
+            case "${2:-}" in
+                on|off) echo "$2" > "$EQBUDDY_AUTOHIDE_FILE"; echo "EQBuddy autohide: $2 (takes effect next launch)" ;;
+                "")     echo "EQBuddy autohide: $(eqbuddy_autohide)" ;;
+                *)      die "usage: osxeql eqbuddy autohide [on|off]" ;;
+            esac ;;
+        *)  die "usage: osxeql eqbuddy [install|update|desktop|window|off|autohide [on|off]|autoclose [on|off]|autoupdate [on|off]]" ;;
+    esac
+}
+
+cmd_winlevels() {
+    local bin="$OSXEQL_HOME/bin/winlevels" src="$HERE/tools/winlevels.m" filter="" delay=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --delay) delay="${2:-10}"; shift 2 ;;
+            *)       filter="$1"; shift ;;
+        esac
+    done
+    if [ ! -x "$bin" ] || [ "$src" -nt "$bin" ]; then
+        mkdir -p "$(dirname "$bin")"
+        xcrun clang -fobjc-arc -O2 -o "$bin" "$src" -framework Foundation -framework CoreGraphics \
+            || die "could not build winlevels (Xcode command-line tools needed: xcode-select --install)"
+    fi
+    [ "$delay" -gt 0 ] 2>/dev/null && { echo "capturing in ${delay}s — switch to the game now"; sleep "$delay"; }
+    "$bin" ${filter:+"$filter"}
 }
 
 cmd_doctor() {
@@ -96,6 +206,19 @@ case "${1:-}" in
     play)          bash "$HERE/04-launch.sh" ;;
     backend)       shift; bash "$HERE/03-install-backend.sh" "$@" ;;
     res)           shift; cmd_res "$@" ;;
+    eqbuddy)       shift; cmd_eqbuddy "$@" ;;
+    overlay)       shift; bash "$HERE/overlay.sh" "$@" ;;
+    audiofix)      shift; bash "$HERE/audiofix.sh" "$@" ;;
+    winlevels)     shift; cmd_winlevels "$@" ;;
+    logs)
+        shift
+        case "${1:-}" in
+            "")      echo "EverQuest logs in $(gamelog_dir) (startup warning above $(gamelog_threshold_mb) MB):"
+                     gamelog_list 0 | gamelog_describe | sed 's/^/  /' ;;
+            archive) moved="$(gamelog_list "${2:-0}" | gamelog_archive)" || die "quit the game first"
+                     log "archived ${moved:-0} MB to $(gamelog_dir)/archive" ;;
+            *)       die "usage: osxeql logs [archive [MB]]" ;;
+        esac ;;
     status)        cmd_status ;;
     doctor)        cmd_doctor ;;
     ""|-h|--help)  usage ;;

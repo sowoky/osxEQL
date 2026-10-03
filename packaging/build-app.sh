@@ -1,5 +1,5 @@
 #!/bin/bash
-# build-app.sh — assemble the self-contained, relocatable osxEQL.app into dist/.
+# build-app.sh — assemble the self-contained, relocatable osxEQL-Buddy.app into dist/.
 #
 # Embeds the portable Wine runtime (DXMT baked in) under Contents/Resources/Wine.
 # The game client + prefix are NOT bundled — they live in ~/Library/Application
@@ -14,8 +14,16 @@ REPO="$(cd "$HERE/.." && pwd)"
 WINE_SRC="${1:-$HOME/Library/Application Support/osxEQL/Wine}"
 # Fallback: no staged dev runtime (wiped 2026-07-12) — source the runtime from
 # the installed app; it already carries DXMT + the bundled dylibs + ICD json.
-[ -x "$WINE_SRC/bin/wine" ] || WINE_SRC="/Applications/osxEQL.app/Contents/Resources/Wine"
-OUT="$REPO/dist/osxEQL.app"
+# (the installed osxEQL-Buddy.app, or a pre-1.0 osxEQL.app).
+if [ ! -x "$WINE_SRC/bin/wine" ]; then
+    for _app in /Applications/osxEQL-Buddy.app /Applications/osxEQL.app; do
+        [ -x "$_app/Contents/Resources/Wine/bin/wine" ] && { WINE_SRC="$_app/Contents/Resources/Wine"; break; }
+    done
+fi
+# Resolve symlinks: `osxeql` users often point ~/…/osxEQL/Wine at the app's runtime,
+# and ditto given a symlink would copy the link, not the runtime.
+WINE_SRC="$(cd "$WINE_SRC" 2>/dev/null && pwd -P)" || { echo "no Wine runtime found"; exit 1; }
+OUT="$REPO/dist/osxEQL-Buddy.app"
 
 # --- preflight -------------------------------------------------------------
 [ -x "$WINE_SRC/bin/wine" ]                                   || { echo "no wine at $WINE_SRC/bin/wine"; exit 1; }
@@ -32,9 +40,11 @@ rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
 install -m 0755 "$REPO/app/launcher.sh" "$OUT/Contents/MacOS/osxEQL"
 cp "$REPO/app/Info.plist"        "$OUT/Contents/Info.plist"
+install -m 0644 "$REPO/engine/eqbuddy.sh" "$OUT/Contents/Resources/eqbuddy.sh"   # EQBuddy companion (sourced by the launcher)
 cp "$REPO/assets/icon/AppIcon.icns" "$OUT/Contents/Resources/AppIcon.icns"
 echo "compiling setup-window helper…"
 xcrun swiftc -O -o "$OUT/Contents/Resources/osxeql-progress" "$REPO/app/progress-helper.swift" -framework AppKit
+xcrun swiftc -O -o "$OUT/Contents/Resources/eqbuddy-focus" "$REPO/engine/tools/eqbuddy-focus.swift" -framework AppKit
 echo "copying Wine runtime ($(du -sh "$WINE_SRC" | cut -f1)) — a moment…"
 ditto "$WINE_SRC" "$OUT/Contents/Resources/Wine"
 
@@ -55,4 +65,11 @@ else
     codesign --verify --deep "$OUT" && echo "signature OK"
 fi
 
+grep -aq LetTopmostWindowsFloatOverFullscreen "$OUT/Contents/Resources/Wine/lib/wine/x86_64-unix/winemac.so" 2>/dev/null \
+  || nm "$OUT/Contents/Resources/Wine/lib/wine/x86_64-unix/winemac.so" 2>/dev/null | grep -q topmost_float_over_fullscreen \
+  && echo "winemac.so: overlay patch present (EQBuddy floats over fullscreen)" \
+  || echo "winemac.so: stock (run engine/osxeql overlay, then rebuild, for the fullscreen overlay)"
+nm "$OUT/Contents/Resources/Wine/lib/wine/x86_64-unix/winecoreaudio.so" 2>/dev/null | grep -q osxeql_follow_default_output \
+  && echo "winecoreaudio.so: follows the macOS default output" \
+  || echo "winecoreaudio.so: stock (run engine/osxeql audiofix, then rebuild, for headphone switching)"
 echo "built: $OUT  ($(du -sh "$OUT" | cut -f1))"

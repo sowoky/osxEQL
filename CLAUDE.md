@@ -22,14 +22,15 @@ Metal view to the Wine window. Stock Wine doesn't export it; CrossOver's build a
 patched Wine do. **That symbol is the crux of this whole project.**
 
 ## Where everything lives
-- **The app:** `/Applications/osxEQL.app` — double-click → Daybreak LaunchPad → log in →
+- **The app:** `/Applications/osxEQL-Buddy.app` (osxEQL-Buddy 1.0+; `osxEQL.app` before
+  the fork's rename — scripts accept either) — double-click → Daybreak LaunchPad → log in →
   Play → game renders via DXMT. Since v0.2.1 the bundle also carries the Homebrew dylibs
   wine dlopens (`Wine/lib/lib*.dylib`, staged by `packaging/bundle-dylibs.sh`), so the DMG
   runs on Macs with no Intel Homebrew.
 - **The runtime ("bottle"):** `~/Library/Application Support/osxEQL/`
   - Since the 2026-07-12 clean-Mac wipe + fresh-DMG test, kyle-mac looks like a USER
     machine: **no staged `Wine/` dev runtime, no `prefix-cx/`** — the wine runtime lives
-    ONLY inside `/Applications/osxEQL.app/Contents/Resources/Wine` (build-app.sh falls
+    ONLY inside the installed app's `Contents/Resources/Wine` (build-app.sh falls
     back to it as WINE_SRC), and Intel Homebrew is gone (reinstall it + rerun
     `engine/build-wine.sh` if a runtime rebuild is ever needed).
   - The runtime is our **self-built CrossOver 26.2.0 Wine** — compiled from CodeWeavers'
@@ -70,8 +71,13 @@ patched Wine do. **That symbol is the crux of this whole project.**
    (windowed) and `Width/Height` (in-game fullscreen) — the `.app` pins ALL FOUR plus the
    `explorer /desktop=osxEQL,WxH` size from one resolved value (`resolve_size` in
    `app/launcher.sh`), re-resolved at every launch: env `OSXEQL_W/H` > pin file
-   `~/Library/Application Support/osxEQL/resolution` (`WxH`|`max`|`auto`, set via
-   `osxeql res`) > auto = current main display (CoreGraphics, points) minus 40×60 chrome.
+   `~/Library/Application Support/osxEQL/resolution` (`WxH`|`auto`, set via
+   `osxeql res`) > default `max` = EXACTLY the current main display (CoreGraphics,
+   points). Not display-minus-chrome: EQ's in-game fullscreen requests a display mode of
+   Width×Height and a virtual desktop only offers its own size + smaller standard modes,
+   so an odd size makes EQ fall back to 1280×960 → desktop shrinks, mouse clipped, ini
+   rewritten. At the display size, the player's `Fullscreen` value is left alone;
+   otherwise `Fullscreen=0` is forced. `osxeql play` uses the same rules (`engine/lib.sh`).
    Kyle swaps between a 3840×1600 ultrawide and the built-in display — hardcoded defaults
    WILL break one of them; that's why it auto-detects. **Do NOT drag the window bigger
    mid-game** — DXMT's render surface is fixed at launch; EQ rewrites the ini to the dragged

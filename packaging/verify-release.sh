@@ -1,7 +1,7 @@
 #!/bin/bash
 # verify-release.sh — prove a signed osxEQL DMG was actually built from this source.
 #
-#   packaging/verify-release.sh <osxEQL-x.y.z.dmg>
+#   packaging/verify-release.sh <osxEQL-Buddy-x.y.z.dmg>
 #
 # GitHub does not check release assets against the repo, and Apple's notarization
 # only proves WHO signed a binary — not that it matches any source. This script
@@ -17,14 +17,14 @@
 # A signature-only difference is a MATCH. Any difference in section content,
 # in a non-Mach-O file, or in the file list, is a real mismatch — do not publish.
 #
-# NOTE: run this BEFORE replacing /Applications/osxEQL.app with the new build —
+# NOTE: run this BEFORE replacing /Applications/osxEQL-Buddy.app with the new build —
 # build-app.sh sources its Wine runtime from there.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 DMG="${1:-}"
-[ -n "$DMG" ] && [ -f "$DMG" ] || { echo "usage: packaging/verify-release.sh <osxEQL-x.y.z.dmg>"; exit 1; }
+[ -n "$DMG" ] && [ -f "$DMG" ] || { echo "usage: packaging/verify-release.sh <osxEQL-Buddy-x.y.z.dmg>"; exit 1; }
 
 WORK="$(mktemp -d)"; MNT=""
 cleanup() { [ -n "$MNT" ] && hdiutil detach "$MNT" -quiet 2>/dev/null; rm -rf "$WORK"; }
@@ -32,8 +32,8 @@ trap cleanup EXIT
 
 echo "==> mounting $(basename "$DMG")"
 MNT="$(hdiutil attach -nobrowse -readonly "$DMG" | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)"
-THEIRS="$MNT/osxEQL.app"
-[ -d "$THEIRS" ] || { echo "FAIL: no osxEQL.app in the DMG"; exit 1; }
+THEIRS="$MNT/osxEQL-Buddy.app"
+[ -d "$THEIRS" ] || { echo "FAIL: no osxEQL-Buddy.app in the DMG"; exit 1; }
 
 echo
 echo "==> signature and notarization"
@@ -47,7 +47,7 @@ syspolicy_check distribution "$THEIRS" 2>&1 | sed 's/^/    /'
 echo
 echo "==> building your own copy from $(git -C "$REPO" rev-parse --short HEAD)"
 "$HERE/build-app.sh" >/dev/null 2>&1 || { echo "FAIL: build-app.sh failed — run it directly"; exit 1; }
-OURS="$REPO/dist/osxEQL.app"
+OURS="$REPO/dist/osxEQL-Buddy.app"
 
 python3 - "$THEIRS" "$OURS" <<'PY'
 import struct, hashlib, sys, os

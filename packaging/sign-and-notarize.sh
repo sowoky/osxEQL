@@ -1,10 +1,10 @@
 #!/bin/bash
-# sign-and-notarize.sh — sign an assembled osxEQL.app with a Developer ID and
+# sign-and-notarize.sh — sign an assembled osxEQL-Buddy.app with a Developer ID and
 # optionally notarize + staple it for Gatekeeper-clean distribution.
 #
 # Usage:
-#   packaging/sign-and-notarize.sh [dist/osxEQL.app]
-#   packaging/sign-and-notarize.sh --notarize [dist/osxEQL.app]
+#   packaging/sign-and-notarize.sh [dist/osxEQL-Buddy.app]
+#   packaging/sign-and-notarize.sh --notarize [dist/osxEQL-Buddy.app]
 #
 # Environment (secrets — NEVER commit these):
 #   CODESIGN_IDENTITY   Developer ID Application identity (required)
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
         *)          APP="$1"; shift ;;
     esac
 done
-APP="${APP:-$(cd "$HERE/.." && pwd)/dist/osxEQL.app}"
+APP="${APP:-$(cd "$HERE/.." && pwd)/dist/osxEQL-Buddy.app}"
 
 # --- preflight ----------------------------------------------------------------
 [ -d "$APP" ]           || { echo "error: no app at $APP"; exit 1; }

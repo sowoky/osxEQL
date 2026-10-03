@@ -45,6 +45,19 @@ if [ ! -x "$SRC/configure" ]; then
 fi
 test -x "$SRC/configure" || { echo "no $SRC/configure"; exit 1; }
 
+# 1b. osxEQL's opt-in winemac.drv overlay knobs (engine/patches/winemac-overlay.patch;
+# see engine/overlay.sh). Default-off; judged by the tree so a re-run is idempotent.
+if ! grep -q topmost_float_over_fullscreen "$SRC/dlls/winemac.drv/cocoa_window.m" 2>/dev/null; then
+    echo "--- applying winemac-overlay.patch ---"
+    ( cd "$SRC" && patch -p1 --forward --no-backup-if-mismatch < "$HERE/patches/winemac-overlay.patch" ) \
+        || { echo "OVERLAY PATCH FAILED"; exit 1; }
+fi
+
+# 1c. osxEQL-Buddy: CoreAudio streams on the default device follow the macOS default
+# output (engine/patches/coreaudio-follow-default.py; see engine/audiofix.sh). Idempotent.
+/usr/bin/python3 "$HERE/patches/coreaudio-follow-default.py" "$SRC/dlls/winecoreaudio.drv/coreaudio.c" \
+    || { echo "COREAUDIO PATCH FAILED"; exit 1; }
+
 # 2. Build environment (srimanachanta/winecx-dist recipe, system clang, no ccache)
 export BREW_PREFIX=/usr/local
 export CC="clang" CXX="clang++"
